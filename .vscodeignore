@@ -3,6 +3,7 @@
 src/**
 node_modules/**
 .gitignore
+.env
 tsconfig.json
 esbuild.js
 **/*.ts
