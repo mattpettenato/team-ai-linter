@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Team AI Linter is a VS Code/Cursor extension (v0.3.0) that provides AI-powered test linting for Playwright and Checksum test files. It uses the Claude API to analyze test code for issues, complemented by deterministic regex and AST-based detection. The extension also performs git-based safety checks on import graphs.
+Team AI Linter is a VS Code/Cursor extension that provides AI-powered test linting for Playwright and Checksum test files. It uses the Claude API to analyze test code for issues, complemented by deterministic regex and AST-based detection. The extension also performs git-based safety checks on import graphs.
 
 Target files: `*.test.ts`, `*.spec.ts` (and `.js`/`.jsx`/`.tsx` variants), plus `checksum.config.ts`.
 

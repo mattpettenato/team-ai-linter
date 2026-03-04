@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2026-03-04] — v0.4.0
+
+### Added
+- **Auto-Update from GitHub Releases**: Extension now automatically checks for new versions on startup (30s delay) and every 4 hours
+  - Fetches releases from `mattpettenato/team-ai-linter` GitHub repo
+  - Compares semver versions and prompts with Install / Remind Later / Skip options
+  - Downloads `.vsix` asset directly from GitHub Release, installs via VS Code API, prompts reload
+  - Auth header stripped on CDN redirects for security
+  - 15-second timeout on API requests to prevent hanging
+  - Skipped versions remembered in globalState
+- **"Check for Updates" Command**: Manual update check via Command Palette (`Team AI Linter: Check for Updates`)
+- **"Configure GitHub Token" Command**: Securely store GitHub PAT in OS keychain via VS Code SecretStorage (`Team AI Linter: Configure GitHub Token`)
+- **`teamAiLinter.autoUpdate` Setting**: Boolean setting (default `true`) to enable/disable background update checks
+- **Shared Version Service** (`versionService.ts`): Extracted `getExtensionVersion()` from webview into shared module with `compareSemver()` utility
+- **GitHub Actions Release Workflow**: CI pipeline triggered on `v*` tag push — runs type-check, lint, packages `.vsix`, creates GitHub Release with artifact
+- **Standalone ESLint Config**: `eslint.config.mjs` for the dedicated repo (previously inherited from monorepo)
+
+### Changed
+- **Migrated to Dedicated Repository**: Moved from `checksum-ai/playwright-mcp` monorepo to `mattpettenato/team-ai-linter`
+- **Updated `package.json` repo URL** to point to `mattpettenato/team-ai-linter`
+- **`.vscodeignore`**: Added `.env` exclusion to prevent secrets from being bundled in VSIX
+
+### Fixed
+- **Pre-existing lint errors**: Fixed unused variable `hasBugInTitle` in `astDetector.ts`, changed `let` to `const` for non-reassigned variables in `astDetector.ts` and `deterministicDetector.ts`
+
+---
+
 ## [2026-03-02] — v0.3.1
 
 ### Added

@@ -39,7 +39,21 @@ npm run package
    ANTHROPIC_API_KEY=sk-ant-...
    ```
 
-### 2. Custom Rules (Optional)
+### 2. Configure Auto-Updates
+
+The extension automatically checks for updates on startup and every 4 hours. To enable this:
+
+1. Open Command Palette (`Cmd+Shift+P`)
+2. Run: `Team AI Linter: Configure GitHub Token`
+3. Paste a GitHub Personal Access Token with access to the `mattpettenato/team-ai-linter` repo
+   - **Classic token**: needs `repo` scope
+   - **Fine-grained token**: select the `mattpettenato/team-ai-linter` repo, grant `Contents: Read-only`
+
+Once configured, you'll get a notification whenever a new version is available with options to Install, Remind Later, or Skip.
+
+To disable auto-checks, set `teamAiLinter.autoUpdate` to `false` in VS Code settings. You can always check manually via `Team AI Linter: Check for Updates`.
+
+### 3. Custom Rules (Optional)
 
 Create `.ai-linter/rules.md` in your project root, or set a global rules path in settings.
 
@@ -87,6 +101,7 @@ Settings available in VS Code settings (`Cmd+,`):
 | `teamAiLinter.model` | `claude-sonnet-4-20250514` | Claude model (sonnet/opus/haiku) |
 | `teamAiLinter.minConfidence` | `0.5` | Minimum confidence threshold (0.0-1.0) |
 | `teamAiLinter.ignoreNthSelectors` | `false` | Ignore .nth() selector warnings |
+| `teamAiLinter.autoUpdate` | `true` | Auto-check GitHub Releases for updates |
 
 ## What It Checks
 
@@ -117,3 +132,29 @@ Settings available in VS Code settings (`Cmd+,`):
 | `Lint All Test Files in Folder` | Lint all tests in selected folder(s) |
 | `Lint Selected Test Files` | Lint multiple selected files |
 | `Copy Fix Prompt` | Copy issues as AI fix prompt |
+| `Check for Updates` | Manually check for new versions |
+| `Configure GitHub Token` | Store GitHub PAT for update checks |
+
+## Releasing a New Version
+
+CI automatically builds and publishes releases when you push a version tag.
+
+```bash
+# 1. Bump the version in package.json (e.g. 0.4.0 → 0.5.0)
+
+# 2. Commit the version bump
+git add package.json
+git commit -m "chore: bump version to 0.5.0"
+
+# 3. Create an annotated tag and push
+git tag -a v0.5.0 -m "v0.5.0 - description of changes"
+git push origin main v0.5.0
+```
+
+GitHub Actions will:
+1. Check out the tagged commit
+2. Run `npm ci`, type-check, and lint
+3. Package the `.vsix` with `@vscode/vsce`
+4. Create a GitHub Release with the `.vsix` attached
+
+Team members with the extension installed will be automatically notified of the new version (if they have a GitHub token configured and `autoUpdate` enabled).
