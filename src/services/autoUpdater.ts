@@ -211,6 +211,12 @@ export class AutoUpdater implements vscode.Disposable {
         })
       })
 
+      req.setTimeout(15000, () => {
+        this._log('Request timed out')
+        req.destroy()
+        resolve(null)
+      })
+
       req.on('error', (err) => {
         this._log(`Network error: ${err.message}`)
         resolve(null)
