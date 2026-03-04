@@ -36,7 +36,7 @@ import { loadEnvFile } from '../../config/envLoader';
  * Issues are only reported once (for the first file linted), then skipped.
  * Call resetChecksumConfigCache() at the start of each lint session.
  */
-let _checksumConfigChecked = new Set<string>();
+const _checksumConfigChecked = new Set<string>();
 
 export function resetChecksumConfigCache(): void {
   _checksumConfigChecked.clear();

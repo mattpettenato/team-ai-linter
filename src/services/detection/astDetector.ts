@@ -243,8 +243,6 @@ export function validateBugAnnotations(content: string, fileName: string = 'temp
           testName = testNameArg.getText().replace(/['"]/g, '');
 
 
-        const hasBugInTitle = testName.includes('@bug');
-
         // Check for config object
         let hasBugAnnotation = false;
         let hasBugTag = false;
@@ -652,7 +650,7 @@ export function findMissingEnvVarGuards(content: string, fileName: string = 'tem
 
       // Skip boolean-coerced: !!process.env.X
       // Detected by checking for two nested PrefixUnaryExpression ancestors with ! operator
-      let parent = node.getParent();
+      const parent = node.getParent();
       if (parent && Node.isPrefixUnaryExpression(parent) &&
           parent.getOperatorToken() === SyntaxKind.ExclamationToken) {
         const grandparent = parent.getParent();
@@ -725,7 +723,7 @@ export function findEnvVarsNotInDotenv(
       seenVars.add(varName);
 
       // Skip boolean-coerced: !!process.env.X
-      let parent = node.getParent();
+      const parent = node.getParent();
       if (parent && Node.isPrefixUnaryExpression(parent) &&
           parent.getOperatorToken() === SyntaxKind.ExclamationToken) {
         const grandparent = parent.getParent();
