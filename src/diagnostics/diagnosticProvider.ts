@@ -1,0 +1,138 @@
+/**
+ * Copyright (c) Microsoft Corporation.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+import * as vscode from 'vscode';
+import { LintIssue, GitIssue } from '../types';
+
+// Re-export types for backward compatibility with existing imports
+export type { LintIssue, GitIssue } from '../types';
+
+export class DiagnosticProvider implements vscode.Disposable {
+  private collection: vscode.DiagnosticCollection;
+
+  constructor() {
+    this.collection = vscode.languages.createDiagnosticCollection('team-ai-linter');
+  }
+
+  /**
+   * Set AI lint diagnostics for a document
+   */
+  setLintDiagnostics(uri: vscode.Uri, issues: LintIssue[]): void {
+    const diagnostics = issues.map(issue => this.lintIssueToDiagnostic(issue));
+    const existing = this.getGitDiagnostics(uri);
+    this.collection.set(uri, [...diagnostics, ...existing]);
+  }
+
+  /**
+   * Set git safety diagnostics for a document
+   */
+  setGitDiagnostics(uri: vscode.Uri, issues: GitIssue[]): void {
+    const diagnostics = issues.map(issue => this.gitIssueToDiagnostic(issue));
+    const existing = this.getLintDiagnostics(uri);
+    this.collection.set(uri, [...existing, ...diagnostics]);
+  }
+
+  /**
+   * Set both AI lint and git diagnostics at once
+   */
+  setAllDiagnostics(uri: vscode.Uri, lintIssues: LintIssue[], gitIssues: GitIssue[]): void {
+    const lintDiagnostics = lintIssues.map(issue => this.lintIssueToDiagnostic(issue));
+    const gitDiagnostics = gitIssues.map(issue => this.gitIssueToDiagnostic(issue));
+    this.collection.set(uri, [...lintDiagnostics, ...gitDiagnostics]);
+  }
+
+  /**
+   * Clear all diagnostics for a document
+   */
+  clear(uri: vscode.Uri): void {
+    this.collection.delete(uri);
+  }
+
+  /**
+   * Clear all diagnostics
+   */
+  clearAll(): void {
+    this.collection.clear();
+  }
+
+  dispose(): void {
+    this.collection.dispose();
+  }
+
+  private lintIssueToDiagnostic(issue: LintIssue): vscode.Diagnostic {
+    const startLine = Math.max(0, issue.line - 1);
+    const startCol = issue.column ? Math.max(0, issue.column - 1) : 0;
+    const endLine = issue.endLine ? Math.max(0, issue.endLine - 1) : startLine;
+    const endCol = issue.endColumn ? issue.endColumn : 1000;
+
+    const range = new vscode.Range(startLine, startCol, endLine, endCol);
+
+    // Include confidence percentage if available
+    const confidenceStr = issue.confidence !== undefined
+      ? ` (${Math.round(issue.confidence * 100)}% confidence)`
+      : '';
+
+    const diagnostic = new vscode.Diagnostic(
+        range,
+        `[${issue.rule}] ${issue.message}${confidenceStr}`,
+        this.mapSeverity(issue.severity)
+    );
+
+    diagnostic.source = 'Team AI Linter';
+    diagnostic.code = issue.rule;
+
+    return diagnostic;
+  }
+
+  private gitIssueToDiagnostic(issue: GitIssue): vscode.Diagnostic {
+    const line = Math.max(0, issue.importLine - 1);
+    const range = new vscode.Range(line, 0, line, 1000);
+
+    const diagnostic = new vscode.Diagnostic(
+        range,
+        issue.message,
+        issue.severity === 'error'
+          ? vscode.DiagnosticSeverity.Error
+          : vscode.DiagnosticSeverity.Warning
+    );
+
+    diagnostic.source = 'Team AI Linter (Git)';
+    diagnostic.code = 'git-safety';
+
+    return diagnostic;
+  }
+
+  private mapSeverity(severity: string): vscode.DiagnosticSeverity {
+    switch (severity) {
+      case 'error':
+        return vscode.DiagnosticSeverity.Error;
+      case 'warning':
+        return vscode.DiagnosticSeverity.Warning;
+      case 'info':
+      default:
+        return vscode.DiagnosticSeverity.Information;
+    }
+  }
+
+  private getLintDiagnostics(uri: vscode.Uri): vscode.Diagnostic[] {
+    const all = this.collection.get(uri) || [];
+    return all.filter(d => d.source === 'Team AI Linter');
+  }
+
+  private getGitDiagnostics(uri: vscode.Uri): vscode.Diagnostic[] {
+    const all = this.collection.get(uri) || [];
+    return all.filter(d => d.source === 'Team AI Linter (Git)');
+  }
+}

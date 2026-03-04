@@ -1,0 +1,172 @@
+{
+  "name": "team-ai-linter",
+  "displayName": "Team AI Linter",
+  "description": "AI-powered test linting and import-graph git safety checks for Cursor IDE",
+  "version": "0.3.0",
+  "publisher": "checksum",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mattpettenato/team-ai-linter"
+  },
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "Linters",
+    "Testing"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onLanguage:typescript",
+    "onLanguage:javascript"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "teamAiLinter.runAll",
+        "title": "Run AI Lint",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "teamAiLinter.setup",
+        "title": "Team AI Linter: Configure .env Path"
+      },
+      {
+        "command": "teamAiLinter.setupRules",
+        "title": "Team AI Linter: Configure Guidelines Path"
+      },
+      {
+        "command": "teamAiLinter.lintFolder",
+        "title": "Team AI Linter: Lint All Test Files in Folder"
+      },
+      {
+        "command": "teamAiLinter.lintSelectedFiles",
+        "title": "Team AI Linter: Lint Selected Test Files"
+      },
+      {
+        "command": "teamAiLinter.copyFixPrompt",
+        "title": "Copy Fix Prompt"
+      },
+      {
+        "command": "teamAiLinter.checkForUpdates",
+        "title": "Team AI Linter: Check for Updates"
+      },
+      {
+        "command": "teamAiLinter.setupGithubToken",
+        "title": "Team AI Linter: Configure GitHub Token"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "teamAiLinter.runAll",
+          "when": "resourceFilename =~ /.*(test|spec)\\.(ts|tsx|js|jsx)$/ || resourceFilename == 'checksum.config.ts'",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "teamAiLinter.runAll",
+          "when": "resourceFilename =~ /.*(test|spec)\\.(ts|tsx|js|jsx)$/ || resourceFilename == 'checksum.config.ts'",
+          "group": "teamAiLinter"
+        },
+        {
+          "command": "teamAiLinter.copyFixPrompt",
+          "when": "resourceFilename =~ /.*(test|spec)\\.(ts|tsx|js|jsx)$/ || resourceFilename == 'checksum.config.ts'",
+          "group": "teamAiLinter"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "teamAiLinter.lintFolder",
+          "when": "explorerResourceIsFolder",
+          "group": "teamAiLinter"
+        },
+        {
+          "command": "teamAiLinter.lintSelectedFiles",
+          "when": "!explorerResourceIsFolder && (resourceFilename =~ /.*(test|spec)\\.(ts|tsx|js|jsx)$/ || resourceFilename == 'checksum.config.ts')",
+          "group": "teamAiLinter"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "teamAiLinter.runAll",
+        "key": "ctrl+shift+l",
+        "mac": "cmd+shift+l",
+        "when": "editorTextFocus && (resourceFilename =~ /.*(test|spec)\\.(ts|tsx|js|jsx)$/ || resourceFilename == 'checksum.config.ts')"
+      }
+    ],
+    "configuration": {
+      "title": "Team AI Linter",
+      "properties": {
+        "teamAiLinter.envFilePath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to .env file containing ANTHROPIC_API_KEY"
+        },
+        "teamAiLinter.globalRulesPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to global rules/guidelines file (absolute path). Takes precedence over workspace rules."
+        },
+        "teamAiLinter.rulesPath": {
+          "type": "string",
+          "default": ".ai-linter/rules.md",
+          "description": "Path to rules markdown file relative to workspace root (used if globalRulesPath not set)"
+        },
+        "teamAiLinter.model": {
+          "type": "string",
+          "default": "claude-sonnet-4-20250514",
+          "enum": [
+            "claude-sonnet-4-20250514",
+            "claude-opus-4-20250514",
+            "claude-3-5-haiku-20241022"
+          ],
+          "description": "Claude model to use for AI linting"
+        },
+        "teamAiLinter.minConfidence": {
+          "type": "number",
+          "default": 0.5,
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Minimum confidence threshold (0.0-1.0) for showing AI-detected issues. Issues below this threshold will be hidden."
+        },
+        "teamAiLinter.ignoreNthSelectors": {
+          "type": "boolean",
+          "default": false,
+          "description": "Ignore warnings about .nth() selector usage. Enable this if your tests intentionally use nth-based indexing."
+        },
+        "teamAiLinter.autoUpdate": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically check for extension updates from GitHub Releases."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "npm run check-types && node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "package": "npm run check-types && node esbuild.js --production",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "cspell-lib": "^9.6.2",
+    "ts-morph": "^25.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "20.x",
+    "@types/vscode": "^1.96.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "esbuild": "^0.25.0",
+    "eslint": "^9.0.0",
+    "typescript": "^5.7.0"
+  }
+}
