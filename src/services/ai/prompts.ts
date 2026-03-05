@@ -45,6 +45,8 @@ CRITICAL INSTRUCTIONS:
    - Any variable assignments (vs.xxx = ..., const xxx = ..., let xxx = ...)
    - "let" vs "const" for init() destructuring - using "let { test, ... } = init(base)" is the CORRECT pattern
    - Do NOT suggest changing "let" to "const" for the init() destructuring - this is intentional
+   - Multiple Playwright actions within a single checksumAI block - DO NOT FLAG, this is handled by deterministic detection with rule "multiple_actions_in_checksumai"
+   - Missing assertion messages (expect without a message string) - DO NOT FLAG, this is handled by deterministic detection with rule "missing_assertion_message"
 
 4. MISSING AWAIT ON PLAYWRIGHT ACTIONS (rule: "missing_await_on_action", severity: error):
    - CRITICAL: All Playwright actions return Promises and MUST be awaited
@@ -200,7 +202,8 @@ CRITICAL INSTRUCTIONS:
 
 8. TEST ARCHITECTURE PATTERNS - Check for these issues:
 
-   a) MISSING MESSAGE IN ASSERTION (rule: "missing_assertion_message", severity: info):
+   a) MISSING MESSAGE IN ASSERTION (rule: "missing_assertion_message", severity: warning):
+      - NOTE: This is now handled deterministically — DO NOT flag this in AI analysis to avoid duplicates.
       - expect() calls should have a descriptive message parameter
       - Good: await expect(element, "Verify warning dialog is visible").toBeVisible()
       - Bad: await expect(element).toBeVisible()

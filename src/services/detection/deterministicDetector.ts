@@ -25,7 +25,9 @@ import {
   findConstDeclarationsInTests,
   findExpectsInsideChecksumAI,
   findMissingEnvVarGuards,
-  findEnvVarsNotInDotenv
+  findEnvVarsNotInDotenv,
+  findMultipleActionsInChecksumAI,
+  findExpectsWithoutMessages
 } from './astDetector';
 import { spellCheckFile } from './spellChecker';
 import { shouldIgnoreNthSelectors, getEnvFilePath, findChecksumConfigPath } from '../../config/configLoader';
@@ -403,6 +405,38 @@ async function detectASTPatterns(
     }
   }
 
+  // AST-based: Multiple actions in checksumAI blocks
+  try {
+    const multiActionIssues = findMultipleActionsInChecksumAI(fileContent, filePath);
+    for (const result of multiActionIssues) {
+      issues.push({
+        line: result.line,
+        message: `checksumAI block "${result.checksumAIDescription}" contains ${result.actionCount} user actions. Each checksumAI wrapper should contain exactly one action so the AI agent can recover individual steps independently.`,
+        severity: 'warning',
+        rule: 'multiple_actions_in_checksumai',
+      });
+    }
+  } catch (error) {
+    console.warn('[DeterministicDetector] Failed to check multiple actions in checksumAI:', error);
+  }
+
+  // AST-based: Expects without messages (only for test files)
+  if (!isUtilityFile) {
+    try {
+      const noMessageIssues = findExpectsWithoutMessages(fileContent, filePath);
+      for (const result of noMessageIssues) {
+        issues.push({
+          line: result.line,
+          message: 'Add a descriptive message to this assertion so failures are self-explanatory: expect(locator, "message").toBeVisible()',
+          severity: 'warning',
+          rule: 'missing_assertion_message',
+        });
+      }
+    } catch (error) {
+      console.warn('[DeterministicDetector] Failed to check expects without messages:', error);
+    }
+  }
+
   // Always check checksum.config.ts env vars, regardless of which file is being linted.
   // Only reports once per lint session — subsequent files skip entirely.
   try {
@@ -513,7 +547,9 @@ export function mergeAndDeduplicateIssues(aiIssues: LintIssue[], deterministicIs
            issue.message.toLowerCase().includes('file does not exist') ||
            (issue.message.toLowerCase().includes('import') && issue.message.toLowerCase().includes('init()')) ||
            issue.rule.toLowerCase().includes('repl_import') ||
-           (issue.message.toLowerCase().includes('repl') && issue.message.toLowerCase().includes('import'))
+           (issue.message.toLowerCase().includes('repl') && issue.message.toLowerCase().includes('import')) ||
+           issue.rule.toLowerCase().includes('multiple_actions_in_checksumai') ||
+           (issue.message.toLowerCase().includes('multiple') && issue.message.toLowerCase().includes('checksumai'))
     );
 
     if (isDeterministicPattern) {

@@ -567,6 +567,148 @@ export function findExpectsInsideChecksumAI(content: string, fileName: string = 
 }
 
 // ============================================================================
+// Multiple Actions in checksumAI Detection
+// ============================================================================
+
+export interface MultipleActionsInChecksumAIIssue {
+  line: number;
+  actionCount: number;
+  checksumAIDescription: string;
+}
+
+const PLAYWRIGHT_ACTION_METHODS = new Set([
+  'click', 'dblclick', 'fill', 'type', 'press', 'hover', 'check', 'uncheck',
+  'selectOption', 'setInputFiles', 'tap', 'goto'
+]);
+
+/**
+ * Find checksumAI blocks that contain more than one Playwright action.
+ * Each block should wrap exactly one user interaction for AI agent recovery.
+ */
+export function findMultipleActionsInChecksumAI(content: string, fileName: string = 'temp.ts'): MultipleActionsInChecksumAIIssue[] {
+  const sourceFile = createProject(content, fileName);
+  const issues: MultipleActionsInChecksumAIIssue[] = [];
+
+  sourceFile.forEachDescendant(node => {
+    if (Node.isCallExpression(node)) {
+      const expr = node.getExpression();
+
+      if (expr.getText() === 'checksumAI') {
+        const args = node.getArguments();
+
+        const descArg = args.find(arg =>
+          Node.isStringLiteral(arg) || Node.isNoSubstitutionTemplateLiteral(arg)
+        );
+        const description = descArg?.getText().replace(/^['"`]|['"`]$/g, '') || '<unknown>';
+
+        const callbackArg = args.find(arg =>
+          Node.isArrowFunction(arg) || Node.isFunctionExpression(arg)
+        );
+
+        if (callbackArg) {
+          let actionCount = 0;
+
+          callbackArg.forEachDescendant(innerNode => {
+            if (Node.isCallExpression(innerNode)) {
+              const innerExpr = innerNode.getExpression();
+              const exprText = innerExpr.getText();
+              const lastSegment = exprText.split('.').pop() ?? '';
+
+              if (PLAYWRIGHT_ACTION_METHODS.has(lastSegment)) {
+                actionCount++;
+              }
+            }
+          });
+
+          if (actionCount > 1) {
+            issues.push({
+              line: node.getStartLineNumber(),
+              actionCount,
+              checksumAIDescription: description,
+            });
+          }
+        }
+      }
+    }
+  });
+
+  return issues;
+}
+
+// ============================================================================
+// Expect Without Message Detection
+// ============================================================================
+
+export interface ExpectWithoutMessageIssue {
+  line: number;
+}
+
+/**
+ * Find expect() calls that are missing a descriptive message parameter.
+ * Only flags expects that have an assertion method chained (.toBeVisible(), etc.)
+ * and are not inside checksumAI blocks.
+ */
+export function findExpectsWithoutMessages(content: string, fileName: string = 'temp.ts'): ExpectWithoutMessageIssue[] {
+  const sourceFile = createProject(content, fileName);
+  const issues: ExpectWithoutMessageIssue[] = [];
+
+  // Collect lines that are inside checksumAI blocks to exclude them
+  const checksumAILines = new Set<number>();
+  sourceFile.forEachDescendant(node => {
+    if (Node.isCallExpression(node)) {
+      const expr = node.getExpression();
+      if (expr.getText() === 'checksumAI') {
+        const args = node.getArguments();
+        const callbackArg = args.find(arg =>
+          Node.isArrowFunction(arg) || Node.isFunctionExpression(arg)
+        );
+        if (callbackArg) {
+          const start = callbackArg.getStartLineNumber();
+          const end = callbackArg.getEndLineNumber();
+          for (let i = start; i <= end; i++) {
+            checksumAILines.add(i);
+          }
+        }
+      }
+    }
+  });
+
+  sourceFile.forEachDescendant(node => {
+    if (!Node.isCallExpression(node)) return;
+
+    const expr = node.getExpression();
+    const exprText = expr.getText();
+
+    // Match: expect(...) — not expect.poll, expect.soft, etc.
+    if (exprText !== 'expect') return;
+
+    const line = node.getStartLineNumber();
+
+    // Skip expects inside checksumAI blocks
+    if (checksumAILines.has(line)) return;
+
+    const args = node.getArguments();
+
+    // Has a message if second arg is a string literal or template
+    const hasMessage = args.length >= 2 && (
+      Node.isStringLiteral(args[1]) || Node.isNoSubstitutionTemplateLiteral(args[1]) || Node.isTemplateExpression(args[1])
+    );
+
+    if (hasMessage) return;
+
+    // Only flag if this expect() is the direct callee of a property access
+    // i.e., the parent is a property access like expect(...).toBeVisible
+    // This ensures the expect has an assertion method chained on it
+    const parent = node.getParent();
+    if (!parent || !Node.isPropertyAccessExpression(parent)) return;
+
+    issues.push({ line });
+  });
+
+  return issues;
+}
+
+// ============================================================================
 // Missing Environment Variable Guard Detection (checksum.config.ts)
 // ============================================================================
 
