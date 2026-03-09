@@ -187,6 +187,10 @@ export class GitSafetyChecker {
     }
 
     if (gitStatus.isModified && !gitStatus.isStaged) {
+      // Don't flag if the only change is the linter's own "Last linted" timestamp
+      const isOnlyTimestamp = await this.gitService.isOnlyLintTimestampDiff(resolvedPath)
+      if (isOnlyTimestamp) return null
+
       return {
         importLine: imp.line,
         moduleSpecifier: imp.moduleSpecifier,

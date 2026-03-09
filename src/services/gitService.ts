@@ -80,17 +80,6 @@ export class GitService {
 
     const exists = fs.existsSync(absolutePath);
 
-    if (!this.gitRoot) {
-      return {
-        filePath: absolutePath,
-        exists,
-        isTracked: false,
-        isModified: false,
-        isStaged: false,
-        isUntracked: true,
-      };
-    }
-
     const [isTracked, gitStatus] = await Promise.all([
       this.isFileTracked(absolutePath),
       this.getGitStatusOutput(absolutePath),
@@ -117,17 +106,13 @@ export class GitService {
    * Check if a file is tracked by git
    */
   private async isFileTracked(filePath: string): Promise<boolean> {
-    if (!this.gitRoot)
-      return false;
-
-
     try {
       await execAsync(`git ls-files --error-unmatch "${filePath}"`, {
-        cwd: this.gitRoot,
-      });
-      return true;
+        cwd: path.dirname(filePath),
+      })
+      return true
     } catch {
-      return false;
+      return false
     }
   }
 
@@ -135,20 +120,40 @@ export class GitService {
    * Get the git status output for a file
    */
   private async getGitStatusOutput(filePath: string): Promise<string> {
-    if (!this.gitRoot)
-      return '';
-
-
     try {
       const { stdout } = await execAsync(`git status --porcelain "${filePath}"`, {
-        cwd: this.gitRoot,
-      });
+        cwd: path.dirname(filePath),
+      })
       // Only trim trailing whitespace — the leading characters are status codes
       // e.g., " M path/file" means modified in worktree (not staged)
       //        "M  path/file" means modified in index (staged)
-      return stdout.trimEnd();
+      return stdout.trimEnd()
     } catch {
-      return '';
+      return ''
+    }
+  }
+
+  /**
+   * Check if the only unstaged change in a file is the "Last linted" timestamp
+   */
+  async isOnlyLintTimestampDiff(filePath: string): Promise<boolean> {
+    try {
+      const cwd = path.dirname(filePath)
+      const { stdout } = await execAsync(`git diff -- "${filePath}"`, { cwd })
+      if (!stdout.trim()) return false
+
+      // Extract only added/removed content lines (not diff headers)
+      const contentLines = stdout.split('\n').filter(
+        line => (line.startsWith('+') || line.startsWith('-')) &&
+                !line.startsWith('+++') && !line.startsWith('---')
+      )
+
+      // Check if every changed line is a "Last linted" comment (or empty)
+      return contentLines.length > 0 && contentLines.every(
+        line => /^[+-]\s*\/\/\s*Last linted:/.test(line) || /^[+-]\s*$/.test(line)
+      )
+    } catch {
+      return false
     }
   }
 
