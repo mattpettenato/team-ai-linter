@@ -56,6 +56,11 @@
       {
         "command": "teamAiLinter.setupGithubToken",
         "title": "Team AI Linter: Configure GitHub Token"
+      },
+      {
+        "command": "teamAiLinter.lintScmFiles",
+        "title": "Run AI Lint",
+        "icon": "$(beaker)"
       }
     ],
     "menus": {
@@ -87,6 +92,19 @@
         {
           "command": "teamAiLinter.lintSelectedFiles",
           "when": "!explorerResourceIsFolder && (resourceFilename =~ /.*(test|spec)\\.(ts|tsx|js|jsx)$/ || resourceFilename == 'checksum.config.ts')",
+          "group": "teamAiLinter"
+        }
+      ],
+      "scm/resourceState/context": [
+        {
+          "command": "teamAiLinter.lintScmFiles",
+          "group": "teamAiLinter"
+        }
+      ],
+      "scm/resourceGroup/context": [
+        {
+          "command": "teamAiLinter.lintScmFiles",
+          "when": "scmResourceGroup == workingTree",
           "group": "teamAiLinter"
         }
       ]

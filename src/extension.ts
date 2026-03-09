@@ -255,6 +255,60 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(lintSelectedFilesCmd);
 
+  // Lint files from SCM Changes context menu (right-click files or group header)
+  const lintScmFilesCmd = vscode.commands.registerCommand(
+      'teamAiLinter.lintScmFiles',
+      async (...args: unknown[]) => {
+        const testFilePattern = /(test|spec)\.(ts|tsx|js|jsx)$/;
+        let uris: vscode.Uri[] = [];
+
+        const first = args[0] as Record<string, unknown> | undefined;
+
+        if (first && Array.isArray(first.resourceStates)) {
+          // Invoked from group header — first arg is SourceControlResourceGroup
+          uris = first.resourceStates
+            .filter((r: unknown): r is { resourceUri: vscode.Uri } =>
+              typeof r === 'object' && r !== null && 'resourceUri' in r)
+            .map(r => r.resourceUri);
+        } else if (first && first.resourceUri instanceof vscode.Uri) {
+          // Invoked from individual file(s) — may have multi-select in second arg
+          const selected = args[1];
+          if (Array.isArray(selected) && selected.length > 0) {
+            uris = selected
+              .filter((r: unknown): r is { resourceUri: vscode.Uri } =>
+                typeof r === 'object' && r !== null && 'resourceUri' in r)
+              .map(r => r.resourceUri);
+          } else {
+            uris = [first.resourceUri as vscode.Uri];
+          }
+        }
+
+        if (uris.length === 0) {
+          vscode.window.showErrorMessage('No files found in selection');
+          return;
+        }
+
+        // Filter to test files
+        const testFileUris = uris.filter(uri => testFilePattern.test(uri.fsPath) || uri.fsPath.endsWith('checksum.config.ts'));
+        const skippedCount = uris.length - testFileUris.length;
+
+        if (testFileUris.length === 0) {
+          vscode.window.showInformationMessage(`No lintable test files in selection (${skippedCount} file${skippedCount !== 1 ? 's' : ''} skipped)`);
+          return;
+        }
+
+        if (skippedCount > 0)
+          vscode.window.showInformationMessage(`Linting ${testFileUris.length} of ${uris.length} files (${skippedCount} non-test file${skippedCount !== 1 ? 's' : ''} skipped)`);
+
+        const envPath = await ensureEnvConfigured();
+        if (!envPath)
+          return;
+
+        await lintSelectedFiles(testFileUris, diagnosticProvider, envPath);
+      }
+  );
+  context.subscriptions.push(lintScmFilesCmd);
+
   // Copy fix prompt command - copies last lint results as a fix prompt
   // Accepts optional ignoredIssues parameter (array of "file:line:rule" strings)
   const copyFixPrompt = vscode.commands.registerCommand(
