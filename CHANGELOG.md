@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2026-03-09] — v0.4.5
+
+### Added
+- **SCM Context Menu Support**: "Run AI Lint" now appears in the Source Control "Changes" panel context menu
+  - Right-click individual files or multi-select files to lint them
+  - Right-click the "Changes" group header to lint all changed test files at once
+  - Non-test files are automatically skipped with an informative message
+  - Only appears on unstaged "Changes" group (not "Staged Changes")
+
+### Fixed
+- **SCM multi-select handling**: Fixed issue where multi-selecting files in the Changes panel only linted the first file — Cursor passes each selected resource as a separate positional argument rather than an array
+- **Git safety false positives**: Suppressed unstaged-change warnings when the only modification is the linter's own "Last linted" timestamp comment
+- **Git root discovery**: Removed `gitRoot` null guards in `GitService` — git commands now auto-discover the repo root via `path.dirname(filePath)`, improving reliability in nested repository setups
+
+---
+
 ## [2026-03-04] — v0.4.0
 
 ### Added

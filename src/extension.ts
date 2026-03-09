@@ -127,26 +127,6 @@ export function activate(context: vscode.ExtensionContext) {
   });
   context.subscriptions.push(setupRules);
 
-  // Setup GitHub token command - store PAT in SecretStorage
-  const setupGithubToken = vscode.commands.registerCommand('teamAiLinter.setupGithubToken', async () => {
-    const result = await vscode.window.showInputBox({
-      prompt: 'Enter your GitHub Personal Access Token (needs repo read access)',
-      placeHolder: 'ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
-      password: true,
-      validateInput: value => {
-        if (!value || value.trim() === '')
-          return 'Token cannot be empty';
-        return null;
-      }
-    });
-
-    if (result) {
-      await context.secrets.store('githubToken', result.trim());
-      vscode.window.showInformationMessage('GitHub token saved securely. Auto-update checks will use this token.');
-    }
-  });
-  context.subscriptions.push(setupGithubToken);
-
   // Check for updates command - manual trigger
   const checkForUpdates = vscode.commands.registerCommand('teamAiLinter.checkForUpdates', async () => {
     await autoUpdater.checkForUpdateManual();

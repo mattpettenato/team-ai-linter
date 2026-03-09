@@ -113,11 +113,10 @@ Bundled output: `dist/extension.js` (single file via esbuild).
 ### Auto-Update Flow
 
 `autoUpdater.ts` runs on a schedule (30s startup delay, then every 4 hours):
-1. Read GitHub PAT from `context.secrets` (OS keychain via SecretStorage)
-2. Fetch `GET /repos/mattpettenato/team-ai-linter/releases` from GitHub API
-3. Compare latest release tag (e.g. `v0.4.0`) against current version via `compareSemver()`
-4. If newer: prompt user with Install / Remind Later / Skip options
-5. Install: download `.vsix` asset (with auth stripping on CDN redirect), install via VS Code API, prompt reload
+1. Fetch `GET /repos/mattpettenato/team-ai-linter/releases` from GitHub API (no auth needed — public repo)
+2. Compare latest release tag (e.g. `v0.4.0`) against current version via `compareSemver()`
+3. If newer: prompt user with Install / Remind Later / Skip options
+4. Install: download `.vsix` asset (follows CDN redirect), install via VS Code API, prompt reload
 
 ### Main Flow
 
@@ -187,8 +186,6 @@ VS Code settings under `teamAiLinter.*` namespace:
 | `ignoreNthSelectors` | `false` | Suppress `.nth()` selector warnings |
 | `autoUpdate` | `true` | Auto-check GitHub Releases for updates |
 
-GitHub token is stored in **SecretStorage** (OS keychain), not in settings. Configure via `teamAiLinter.setupGithubToken` command.
-
 **Rules resolution order**: globalRulesPath > bundled `guidelines.md` > workspace `.ai-linter/rules.md`
 
 ## Extension Commands
@@ -198,7 +195,6 @@ GitHub token is stored in **SecretStorage** (OS keychain), not in settings. Conf
 | `teamAiLinter.runAll` | Run AI Lint | `Cmd+Shift+L`, editor title bar, context menu |
 | `teamAiLinter.setup` | Configure .env Path | Command palette |
 | `teamAiLinter.setupRules` | Configure Guidelines Path | Command palette |
-| `teamAiLinter.setupGithubToken` | Configure GitHub Token | Command palette |
 | `teamAiLinter.checkForUpdates` | Check for Updates | Command palette |
 | `teamAiLinter.lintFolder` | Lint All Test Files in Folder | Explorer context menu |
 | `teamAiLinter.lintSelectedFiles` | Lint Selected Test Files | Explorer context menu |

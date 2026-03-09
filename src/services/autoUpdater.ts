@@ -47,7 +47,6 @@ export class AutoUpdater implements vscode.Disposable {
   private _checking = false
 
   constructor(
-    private readonly _secrets: vscode.SecretStorage,
     private readonly _globalState: vscode.Memento,
     private readonly _globalStorageUri: vscode.Uri,
     private readonly _outputChannel: vscode.OutputChannel
@@ -92,20 +91,6 @@ export class AutoUpdater implements vscode.Disposable {
 
     this._checking = true
     try {
-      const token = await this._secrets.get('githubToken')
-      if (!token) {
-        if (manual) {
-          const action = await vscode.window.showWarningMessage(
-            'GitHub token not configured. Set it up to check for updates.',
-            'Configure Token'
-          )
-          if (action === 'Configure Token')
-            await vscode.commands.executeCommand('teamAiLinter.setupGithubToken')
-        }
-        this._log('No GitHub token configured')
-        return
-      }
-
       const currentVersion = getExtensionVersion()
       if (currentVersion === 'unknown') {
         this._log('Could not determine current version')
@@ -114,7 +99,7 @@ export class AutoUpdater implements vscode.Disposable {
 
       this._log(`Current version: ${currentVersion}`)
 
-      const releases = await this._fetchReleases(token)
+      const releases = await this._fetchReleases()
       if (!releases || releases.length === 0) {
         if (manual) vscode.window.showInformationMessage('Team AI Linter is up to date!')
         this._log('No releases found')
@@ -166,7 +151,7 @@ export class AutoUpdater implements vscode.Disposable {
       )
 
       if (choice === 'Install Update')
-        await this._installUpdate(vsixAsset, token, latest.version)
+        await this._installUpdate(vsixAsset, latest.version)
       else if (choice === 'Skip This Version')
         await this._globalState.update('skippedVersion', latest.version)
 
@@ -179,14 +164,13 @@ export class AutoUpdater implements vscode.Disposable {
     }
   }
 
-  private _fetchReleases(token: string): Promise<GitHubRelease[] | null> {
+  private _fetchReleases(): Promise<GitHubRelease[] | null> {
     return new Promise((resolve) => {
       const options: https.RequestOptions = {
         hostname: 'api.github.com',
         path: `/repos/${REPO_OWNER}/${REPO_NAME}/releases`,
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Accept': 'application/vnd.github+json',
           'User-Agent': 'team-ai-linter-vscode',
           'X-GitHub-Api-Version': '2022-11-28'
@@ -226,7 +210,7 @@ export class AutoUpdater implements vscode.Disposable {
     })
   }
 
-  private async _installUpdate(asset: GitHubAsset, token: string, version: string): Promise<void> {
+  private async _installUpdate(asset: GitHubAsset, version: string): Promise<void> {
     const storagePath = this._globalStorageUri.fsPath
     await vscode.workspace.fs.createDirectory(this._globalStorageUri)
 
@@ -242,7 +226,7 @@ export class AutoUpdater implements vscode.Disposable {
           cancellable: false
         },
         async () => {
-          await this._downloadAsset(asset.url, token, vsixPath)
+          await this._downloadAsset(asset.url, vsixPath)
         }
       )
 
@@ -274,7 +258,7 @@ export class AutoUpdater implements vscode.Disposable {
     }
   }
 
-  private _downloadAsset(assetApiUrl: string, token: string, destPath: string): Promise<void> {
+  private _downloadAsset(assetApiUrl: string, destPath: string): Promise<void> {
     return new Promise((resolve, reject) => {
       // Use the API URL with Accept header to get the binary — GitHub will redirect to CDN
       const url = new URL(assetApiUrl)
@@ -284,14 +268,13 @@ export class AutoUpdater implements vscode.Disposable {
         path: url.pathname,
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Accept': 'application/octet-stream',
           'User-Agent': 'team-ai-linter-vscode'
         }
       }
 
       const req = https.request(options, (res) => {
-        // Handle redirect — strip auth header for CDN
+        // Handle redirect — follow to CDN
         if (res.statusCode === 302 || res.statusCode === 301) {
           const redirectUrl = res.headers.location
           if (!redirectUrl) {
@@ -319,7 +302,7 @@ export class AutoUpdater implements vscode.Disposable {
     })
   }
 
-  /** Follow redirect URL without auth header (CDN doesn't need it) */
+  /** Follow redirect URL to CDN for asset download */
   private _followRedirect(redirectUrl: string, destPath: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const url = new URL(redirectUrl)
@@ -364,7 +347,6 @@ export function createAutoUpdater(
   outputChannel: vscode.OutputChannel
 ): AutoUpdater {
   return new AutoUpdater(
-    context.secrets,
     context.globalState,
     context.globalStorageUri,
     outputChannel
