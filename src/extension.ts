@@ -270,16 +270,13 @@ export function activate(context: vscode.ExtensionContext) {
             .filter((r: unknown): r is { resourceUri: vscode.Uri } =>
               typeof r === 'object' && r !== null && 'resourceUri' in r)
             .map(r => r.resourceUri);
-        } else if (first && first.resourceUri instanceof vscode.Uri) {
-          // Invoked from individual file(s) — may have multi-select in second arg
-          const selected = args[1];
-          if (Array.isArray(selected) && selected.length > 0) {
-            uris = selected
-              .filter((r: unknown): r is { resourceUri: vscode.Uri } =>
-                typeof r === 'object' && r !== null && 'resourceUri' in r)
-              .map(r => r.resourceUri);
-          } else {
-            uris = [first.resourceUri as vscode.Uri];
+        } else {
+          // Invoked from individual file(s) — Cursor passes each selected
+          // resource as a separate positional arg (not as an array)
+          for (const arg of args) {
+            const resource = arg as Record<string, unknown> | undefined;
+            if (resource && 'resourceUri' in resource && resource.resourceUri instanceof vscode.Uri)
+              uris.push(resource.resourceUri);
           }
         }
 
