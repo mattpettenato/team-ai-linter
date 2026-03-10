@@ -11,7 +11,7 @@ If you have a previous version of Team AI Linter installed:
 
 ## 2. Download & Install the Extension
 
-1. Download the `.vsix` file from [Google Drive](https://drive.google.com/file/d/1hLrk9DPKkcuVnRNJZ4QyU8hCEcE6eRS4/view)
+1. Download the `.vsix` file from [Google Drive](https://github.com/mattpettenato/team-ai-linter/releases/download/v0.4.6/team-ai-linter-0.4.6.vsix)
 2. In VS Code / Cursor, open the Command Palette (`Cmd+Shift+P`)
 3. Run **"Extensions: Install from VSIX..."**
 4. Select the downloaded `.vsix` file
