@@ -362,10 +362,8 @@ await expect(page.getByTestId("submit-button")).toBeVisible();
 await expect(page.getByRole("heading")).toHaveText(/Welcome/);
 await expect(page.locator(".item-list")).toHaveCount(5);
 
-// With extended timeout when needed
-await expect(page.getByTestId("slow-loading-element")).toBeVisible({
-  timeout: 60_000,
-});
+// Rely on the global assertion timeout configured in playwright.config.ts.
+// Do not pass explicit { timeout } to assertions.
 ```
 
 ### Avoid waitForTimeout (Warning Only)
@@ -378,9 +376,7 @@ await page.waitForTimeout(1000);
 await page.locator('button').click();
 
 // PREFERRED - Wait for specific state when possible
-await expect(page.getByRole("dialog", { name: "Add field" })).toBeVisible({
-  timeout: 10_000,
-});
+await expect(page.getByRole("dialog", { name: "Add field" })).toBeVisible();
 await page.getByRole("button", { name: "Add" }).click();
 ```
 
@@ -917,9 +913,9 @@ await page.addLocatorHandler(
   }
 );
 
-// Or use try/catch with short timeout
+// Or use try/catch with web-first assertion
 try {
-  await page.getByRole("dialog", { name: "Welcome" }).waitFor({ timeout: 2000 });
+  await expect(page.getByRole("dialog", { name: "Welcome" })).toBeVisible();
   await page.getByRole("button", { name: "Skip" }).click();
 } catch {
   // Dialog didn't appear, continue
@@ -974,7 +970,7 @@ await page.waitForSelector(".element", { state: "visible" });
 // CORRECT
 await expect(page.locator(".element")).toBeVisible();
 await page.goto("/page", { waitUntil: "domcontentloaded" });
-await expect(page.locator(".element")).toBeVisible({ timeout: 10000 });
+await expect(page.locator(".element")).toBeVisible();
 ```
 
 ### Test Structure Anti-Patterns

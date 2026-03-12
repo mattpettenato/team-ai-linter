@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2026-03-12] — v0.4.7
+
+### Added
+- **`prefer_web_first_assertion` rule**: Flags `.waitFor()` and `.waitFor({ state: "visible"|"hidden" })` — prefer `expect(locator).toBeVisible()` or `expect(locator).toBeHidden()` instead
+  - Does not flag `.waitFor({ state: "attached" })` or `state: "detached"` (no web-first equivalent)
+- **`unnecessary_assertion_timeout` rule**: Flags explicit `{ timeout: ... }` in assertions like `expect(el).toBeVisible({ timeout: 1000 })` — rely on the global assertion timeout in `playwright.config.ts`
+- AI prompt updated with "DO NOT FLAG" entries for both new rules to avoid duplicates with deterministic detection
+
+### Changed
+- **`guidelines.md` updated** to stop recommending explicit assertion timeouts and `.waitFor()` for visibility checks — examples now use web-first assertions without timeouts
+
+---
+
 ## [2026-03-09] — v0.4.5
 
 ### Added

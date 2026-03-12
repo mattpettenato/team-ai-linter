@@ -65,6 +65,24 @@ export const DETERMINISTIC_PATTERNS: DeterministicPattern[] = [
     severity: 'warning',
   },
   {
+    pattern: /\.waitFor\s*\(\s*(?:\)|\{(?:(?!state\s*:)[^}])*\}\s*\))/g,
+    rule: 'prefer_web_first_assertion',
+    message: 'Use web-first assertions instead of .waitFor(). Replace with expect(locator).toBeVisible() or expect(locator).toBeHidden().',
+    severity: 'warning',
+  },
+  {
+    pattern: /\.waitFor\s*\(\s*\{[^}]*state\s*:\s*["'](?:visible|hidden)["'][^}]*\}/g,
+    rule: 'prefer_web_first_assertion',
+    message: 'Use web-first assertions instead of .waitFor(). Replace with expect(locator).toBeVisible() or expect(locator).toBeHidden().',
+    severity: 'warning',
+  },
+  {
+    pattern: /expect\s*\(.*\.to(?:Be|Have|Contain)\w*\s*\([^)]*\btimeout\s*:/g,
+    rule: 'unnecessary_assertion_timeout',
+    message: 'Remove explicit timeout from assertion. Rely on the global assertion timeout configured in playwright.config.ts.',
+    severity: 'warning',
+  },
+  {
     pattern: /waitUntil:\s*["']networkidle["']/g,
     rule: 'avoid_networkidle',
     message: 'Avoid using networkidle - use domcontentloaded instead',
@@ -549,7 +567,11 @@ export function mergeAndDeduplicateIssues(aiIssues: LintIssue[], deterministicIs
            issue.rule.toLowerCase().includes('repl_import') ||
            (issue.message.toLowerCase().includes('repl') && issue.message.toLowerCase().includes('import')) ||
            issue.rule.toLowerCase().includes('multiple_actions_in_checksumai') ||
-           (issue.message.toLowerCase().includes('multiple') && issue.message.toLowerCase().includes('checksumai'))
+           (issue.message.toLowerCase().includes('multiple') && issue.message.toLowerCase().includes('checksumai')) ||
+           issue.rule.toLowerCase().includes('prefer_web_first_assertion') ||
+           (issue.message.toLowerCase().includes('waitfor') && issue.message.toLowerCase().includes('assertion')) ||
+           issue.rule.toLowerCase().includes('unnecessary_assertion_timeout') ||
+           (issue.message.toLowerCase().includes('timeout') && issue.message.toLowerCase().includes('assertion'))
     );
 
     if (isDeterministicPattern) {

@@ -47,6 +47,8 @@ CRITICAL INSTRUCTIONS:
    - Do NOT suggest changing "let" to "const" for the init() destructuring - this is intentional
    - Multiple Playwright actions within a single checksumAI block - DO NOT FLAG, this is handled by deterministic detection with rule "multiple_actions_in_checksumai"
    - Missing assertion messages (expect without a message string) - DO NOT FLAG, this is handled by deterministic detection with rule "missing_assertion_message"
+   - .waitFor() visibility/hidden checks - DO NOT FLAG, handled by deterministic detection with rule "prefer_web_first_assertion"
+   - Explicit timeout parameters in expect assertions - DO NOT FLAG, handled by deterministic detection with rule "unnecessary_assertion_timeout"
 
 4. MISSING AWAIT ON PLAYWRIGHT ACTIONS (rule: "missing_await_on_action", severity: error):
    - CRITICAL: All Playwright actions return Promises and MUST be awaited
