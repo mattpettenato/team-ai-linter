@@ -28,8 +28,13 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Package VSIX
-        run: npx @vscode/vsce package --no-dependencies --allow-package-secrets github
+      - name: Package VSIX (staged prod install with bundled node_modules)
+        # Uses tools/package-vsix.sh which stages a clean prod-only npm install
+        # so the bundled ESLint detector can find its runtime deps (eslint,
+        # typescript-eslint, checksumai-eslint-config, etc.) inside the vsix.
+        # The old `vsce package --no-dependencies` flow shipped a 1.8 MB vsix
+        # with no node_modules; this flow ships ~14.6 MB with everything needed.
+        run: npm run package:vsix
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

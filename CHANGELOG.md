@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2026-04-08] — v0.5.1
+
+### Fixed
+- **Release packaging (CI)**: `release-extension.yml` now invokes `npm run package:vsix` instead of the old `vsce package --no-dependencies` flow. The previous workflow shipped a 1.8 MB vsix that excluded `node_modules/**`, which broke the v0.5.0 ESLint detector layer at runtime (`MODULE_NOT_FOUND` for `eslint`). The new flow stages a clean prod-only `npm install` and packages from there, producing a ~14.6 MB vsix with all bundled runtime deps (`eslint`, `typescript-eslint`, `checksumai-eslint-config`, plus transitive). v0.5.0 users will be auto-updated to v0.5.1 within 4 hours.
+
+> **Note**: v0.5.0 was released but is broken — the ESLint detector cannot load. Use v0.5.1 or later.
+
+---
+
 ## [2026-04-08] — v0.5.0
 
 ### Added
