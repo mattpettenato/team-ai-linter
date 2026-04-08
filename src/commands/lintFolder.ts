@@ -19,7 +19,7 @@ import * as path from 'path';
 import { DiagnosticProvider, LintIssue } from '../diagnostics/diagnosticProvider';
 import { GitIssue } from '../types';
 import { getAnthropicApiKey } from '../config/envLoader';
-import { loadRules, getClaudeModel, getMinConfidence } from '../config/configLoader';
+import { loadRules, getClaudeModel, getMinConfidence, isEslintLayerEnabled, isEslintTypeAwareEnabled } from '../config/configLoader';
 import { createLintServices } from '../services/serviceFactory';
 import { ImportedFileIssue } from '../services/importedFileLinter';
 import { getOutputChannel, getLintResultsPanel } from '../extension';
@@ -98,10 +98,12 @@ export async function lintSelectedFiles(
         const model = getClaudeModel();
         const minConfidence = getMinConfidence();
 
-        const { importedFileLinter, gitSafetyChecker } = createLintServices({
+        const { importedFileLinter, gitSafetyChecker, eslintDetector } = createLintServices({
           apiKey,
           workspaceRoot,
           model,
+          enableEslint: isEslintLayerEnabled(),
+          eslintTypeAware: isEslintTypeAwareEnabled(),
         });
 
         const results: FolderLintResult[] = [];
@@ -128,6 +130,11 @@ export async function lintSelectedFiles(
           try {
             const content = fs.readFileSync(filePath, 'utf-8');
 
+            // Kick off ESLint in parallel with the AI/git work
+            const eslintPromise: Promise<LintIssue[]> = eslintDetector
+              ? eslintDetector.lintFile(filePath, content)
+              : Promise.resolve([]);
+
             // Git safety check
             let gitIssues: GitIssue[] = [];
             try {
@@ -146,24 +153,27 @@ export async function lintSelectedFiles(
 
             const { mainIssues, importedIssues } = result;
 
-            // Set diagnostics for this file (includes git issues)
-            diagnosticProvider.setAllDiagnostics(fileUris[i], mainIssues, gitIssues);
+            const eslintIssues = await eslintPromise;
+            const combinedMainIssues = [...mainIssues, ...eslintIssues];
+
+            // Set diagnostics for this file (includes git + eslint issues)
+            diagnosticProvider.setAllDiagnostics(fileUris[i], mainIssues, gitIssues, eslintIssues);
 
             // Set diagnostics for imported files
             setImportedFileDiagnostics(diagnosticProvider, importedIssues);
 
             results.push({
               filePath,
-              lintIssues: mainIssues,
+              lintIssues: combinedMainIssues,
               importedIssues,
               gitIssues,
             });
 
-            const issueCount = mainIssues.length + importedIssues.length + gitIssues.length;
+            const issueCount = combinedMainIssues.length + importedIssues.length + gitIssues.length;
             panel.pushStatus({ id: `file-${i}`, text: `${fileName}: ${issueCount} issue${issueCount !== 1 ? 's' : ''}`, icon: issueCount > 0 ? 'info' : 'check', replace: true });
 
             // Log issues for this file
-            formatter.logFileIssuesCompact(filePath, mainIssues, importedIssues, gitIssues);
+            formatter.logFileIssuesCompact(filePath, combinedMainIssues, importedIssues, gitIssues);
 
             // Update last linted timestamp
             await updateLastLintedTimestamp(filePath);
@@ -290,10 +300,12 @@ export async function lintFolder(
         const minConfidence = getMinConfidence();
 
         // Create services using factory
-        const { importedFileLinter, gitSafetyChecker } = createLintServices({
+        const { importedFileLinter, gitSafetyChecker, eslintDetector } = createLintServices({
           apiKey,
           workspaceRoot,
           model,
+          enableEslint: isEslintLayerEnabled(),
+          eslintTypeAware: isEslintTypeAwareEnabled(),
         });
 
         const results: FolderLintResult[] = [];
@@ -320,6 +332,11 @@ export async function lintFolder(
           try {
             const content = fs.readFileSync(filePath, 'utf-8');
 
+            // Kick off ESLint in parallel with the AI/git work
+            const eslintPromise: Promise<LintIssue[]> = eslintDetector
+              ? eslintDetector.lintFile(filePath, content)
+              : Promise.resolve([]);
+
             // Git safety check
             let gitIssues: GitIssue[] = [];
             try {
@@ -338,25 +355,28 @@ export async function lintFolder(
 
             const { mainIssues, importedIssues } = result;
 
-            // Set diagnostics for this file (includes git issues)
+            const eslintIssues = await eslintPromise;
+            const combinedMainIssues = [...mainIssues, ...eslintIssues];
+
+            // Set diagnostics for this file (includes git + eslint issues)
             const fileUri = vscode.Uri.file(filePath);
-            diagnosticProvider.setAllDiagnostics(fileUri, mainIssues, gitIssues);
+            diagnosticProvider.setAllDiagnostics(fileUri, mainIssues, gitIssues, eslintIssues);
 
             // Set diagnostics for imported files
             setImportedFileDiagnostics(diagnosticProvider, importedIssues);
 
             results.push({
               filePath,
-              lintIssues: mainIssues,
+              lintIssues: combinedMainIssues,
               importedIssues,
               gitIssues,
             });
 
-            const issueCount = mainIssues.length + importedIssues.length + gitIssues.length;
+            const issueCount = combinedMainIssues.length + importedIssues.length + gitIssues.length;
             panel.pushStatus({ id: `file-${i}`, text: `${fileName}: ${issueCount} issue${issueCount !== 1 ? 's' : ''}`, icon: issueCount > 0 ? 'info' : 'check', replace: true });
 
             // Log issues for this file (compact format)
-            formatter.logFileIssuesCompact(filePath, mainIssues, importedIssues, gitIssues);
+            formatter.logFileIssuesCompact(filePath, combinedMainIssues, importedIssues, gitIssues);
 
             // Update last linted timestamp in the file
             await updateLastLintedTimestamp(filePath);

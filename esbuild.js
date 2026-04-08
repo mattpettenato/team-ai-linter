@@ -13,7 +13,17 @@ async function main() {
     sourcesContent: false,
     platform: 'node',
     outfile: 'dist/extension.js',
-    external: ['vscode'],
+    external: [
+      'vscode',
+      'eslint',
+      '@eslint/js',
+      'typescript-eslint',
+      '@typescript-eslint/parser',
+      '@typescript-eslint/utils',
+      '@typescript-eslint/eslint-plugin',
+      'globals',
+      'checksumai-eslint-config',
+    ],
     logLevel: 'info',
   });
 

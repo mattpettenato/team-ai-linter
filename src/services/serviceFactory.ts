@@ -19,6 +19,8 @@ import { AnthropicService } from './anthropicService';
 import { ImportedFileLinter } from './importedFileLinter';
 import { GitSafetyChecker } from './git/gitSafetyChecker';
 import { OutputFormatter } from '../output';
+import { lintWithEslint } from './detection/eslintDetector';
+import { LintIssue } from '../types';
 
 /**
  * Configuration options for creating services
@@ -27,6 +29,8 @@ export interface ServiceConfig {
   apiKey: string;
   workspaceRoot: string;
   model?: string;
+  enableEslint?: boolean;
+  eslintTypeAware?: boolean;
 }
 
 /**
@@ -36,6 +40,23 @@ export interface LintServices {
   anthropicService: AnthropicService;
   importedFileLinter: ImportedFileLinter;
   gitSafetyChecker: GitSafetyChecker;
+  eslintDetector?: EslintDetectorService;
+}
+
+/**
+ * Wrapper around the ESLint detector that holds workspace-scoped state.
+ * The underlying ESLint instance is module-scoped and cached across calls,
+ * so constructing this class is cheap.
+ */
+export class EslintDetectorService {
+  constructor(
+    private readonly workspaceRoot: string,
+    private readonly typeAware: boolean
+  ) {}
+
+  lintFile(filePath: string, source: string): Promise<LintIssue[]> {
+    return lintWithEslint(filePath, source, this.workspaceRoot, this.typeAware);
+  }
 }
 
 /**
@@ -53,10 +74,15 @@ export function createLintServices(config: ServiceConfig): LintServices {
   // Create GitSafetyChecker (self-contained, uses workspaceRoot)
   const gitSafetyChecker = new GitSafetyChecker(workspaceRoot);
 
+  const eslintDetector = config.enableEslint
+    ? new EslintDetectorService(workspaceRoot, config.eslintTypeAware ?? true)
+    : undefined;
+
   return {
     anthropicService,
     importedFileLinter,
     gitSafetyChecker,
+    eslintDetector,
   };
 }
 
@@ -74,9 +100,11 @@ export function createSingleFileLintServices(
   apiKey: string,
   workspaceRoot: string,
   model?: string,
-  outputChannel?: vscode.OutputChannel
+  outputChannel?: vscode.OutputChannel,
+  enableEslint?: boolean,
+  eslintTypeAware?: boolean
 ): LintServices & { formatter?: OutputFormatter } {
-  const services = createLintServices({ apiKey, workspaceRoot, model });
+  const services = createLintServices({ apiKey, workspaceRoot, model, enableEslint, eslintTypeAware });
 
   return {
     ...services,
@@ -91,7 +119,9 @@ export function createFolderLintServices(
   apiKey: string,
   workspaceRoot: string,
   model?: string,
-  outputChannel?: vscode.OutputChannel
+  outputChannel?: vscode.OutputChannel,
+  enableEslint?: boolean,
+  eslintTypeAware?: boolean
 ): LintServices & { formatter?: OutputFormatter } {
-  return createSingleFileLintServices(apiKey, workspaceRoot, model, outputChannel);
+  return createSingleFileLintServices(apiKey, workspaceRoot, model, outputChannel, enableEslint, eslintTypeAware);
 }

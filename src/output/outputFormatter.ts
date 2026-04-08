@@ -114,6 +114,25 @@ export class OutputFormatter {
   }
 
   /**
+   * Log ESLint issues for the main file
+   */
+  logEslintIssues(filePath: string, issues: LintIssue[]): void {
+    if (issues.length === 0)
+      return;
+
+    this.newLine();
+    this.channel.appendLine(`🧹 ESLINT ISSUES (${issues.length})`);
+    this.separator();
+
+    for (const issue of issues) {
+      const icon = getSeverityIcon(issue.severity);
+      this.channel.appendLine(`${icon} ${formatFileReference(filePath, issue.line)}`);
+      this.channel.appendLine(`   [${issue.rule}] ${issue.message}`);
+      this.newLine();
+    }
+  }
+
+  /**
    * Log imported file issues
    */
   logImportedFileIssues(issues: ImportedFileIssue[]): void {

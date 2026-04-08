@@ -570,6 +570,10 @@ async function detectASTPatterns(
 
 /**
  * Merge AI-detected issues with deterministic issues, deduplicating by line
+ *
+ * Note: ESLint-sourced issues (rules prefixed with `checksum/*` or `@typescript-eslint/*`)
+ * do not flow through this function — they are added directly to the diagnostic provider.
+ * Their unique rule prefixes also guarantee they cannot collide with AI/deterministic rule keys.
  */
 export function mergeAndDeduplicateIssues(aiIssues: LintIssue[], deterministicIssues: LintIssue[]): LintIssue[] {
   const seen = new Set<string>();

@@ -219,8 +219,13 @@ export class LintResultsPanel {
     fileContent: string | undefined,
     lintIssues: LintIssue[],
     importedIssues: ImportedFileIssue[],
-    gitIssues: GitIssue[]
+    gitIssues: GitIssue[],
+    eslintIssues: LintIssue[] = []
   ): void {
+    // Merge ESLint issues into the main lint issues array so they flow through
+    // the existing display logic. The rule prefix (e.g. `checksum/`,
+    // `@typescript-eslint/`) makes them visually distinguishable in the panel.
+    lintIssues = [...lintIssues, ...eslintIssues];
     const files: FileResult[] = [];
     const mainFileName = path.basename(filePath);
 

@@ -2,7 +2,7 @@
   "name": "team-ai-linter",
   "displayName": "Team AI Linter",
   "description": "AI-powered test linting and import-graph git safety checks for Cursor IDE",
-  "version": "0.4.8",
+  "version": "0.5.0",
   "publisher": "checksum",
   "license": "MIT",
   "repository": {
@@ -157,6 +157,16 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically check for extension updates from GitHub Releases."
+        },
+        "teamAiLinter.enableEslintLayer": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run the bundled checksumai-eslint-config rules (one-test-per-file, correct-test-directory, no-floating-promises) as a fast inline detector alongside AI linting."
+        },
+        "teamAiLinter.eslintTypeAwareRules": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable type-aware ESLint rules like @typescript-eslint/no-floating-promises. Requires a tsconfig.json in the workspace. Disable if it produces false positives on unusual repos."
         }
       }
     }
@@ -167,20 +177,34 @@
     "watch": "node esbuild.js --watch",
     "package": "npm run check-types && node esbuild.js --production",
     "check-types": "tsc --noEmit",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "package:vsix": "bash tools/package-vsix.sh",
+    "test:detector": "tsx test-fixtures/eslint-detector/test-real-detector.mts",
+    "test:vsix": "node test-fixtures/vsix/test-vsix-integrity.mjs",
+    "test:diagnostics": "tsx --import ./test-fixtures/diagnostic-provider/register-loader.mjs ./test-fixtures/diagnostic-provider/test-multi-source.mts",
+    "test:regression": "tsx --import ./test-fixtures/regression/register-loader.mjs ./test-fixtures/regression/test-existing-detectors.mts",
+    "test:fixtures": "node test-fixtures/eslint-detector/run-tests.mjs",
+    "test:all": "npm run check-types && npm run test:fixtures && npm run test:detector && npm run test:diagnostics && npm run test:regression && npm run test:vsix"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
+    "@eslint/js": "^9.0.0",
+    "checksumai-eslint-config": "~0.0.10",
     "cspell-lib": "^9.6.2",
-    "ts-morph": "^25.0.1"
+    "eslint": "^9.0.0",
+    "globals": "^15.0.0",
+    "ts-morph": "^25.0.1",
+    "typescript-eslint": "^8.0.0"
   },
   "devDependencies": {
+    "@types/eslint": "^9.0.0",
     "@types/node": "20.x",
     "@types/vscode": "^1.96.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
     "esbuild": "^0.25.0",
     "eslint": "^9.0.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.7.0"
   }
 }

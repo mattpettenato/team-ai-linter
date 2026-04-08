@@ -20,6 +20,7 @@ import { DiagnosticProvider } from '../diagnostics/diagnosticProvider';
 import { LintIssue, GitIssue, ImportedFileIssue } from '../types';
 import { getAnthropicApiKey } from '../config/envLoader';
 import { loadRules, getWorkspaceRoot, getClaudeModel, getMinConfidence } from '../config/configLoader';
+import { isEslintLayerEnabled, isEslintTypeAwareEnabled } from '../config/configLoader';
 import { createLintServices } from '../services/serviceFactory';
 import { getOutputChannel, getLintResultsPanel } from '../extension';
 import { updateLastLintedTimestampForDocument } from '../services/timestampService';
@@ -87,10 +88,12 @@ export async function runAllChecks(
         const minConfidence = getMinConfidence();
 
         // Create services using factory
-        const { gitSafetyChecker, importedFileLinter } = createLintServices({
+        const { gitSafetyChecker, importedFileLinter, eslintDetector } = createLintServices({
           apiKey,
           workspaceRoot,
           model,
+          enableEslint: isEslintLayerEnabled(),
+          eslintTypeAware: isEslintTypeAwareEnabled(),
         });
 
         try {
@@ -104,6 +107,12 @@ export async function runAllChecks(
               `Git safety check failed: ${error instanceof Error ? error.message : String(error)}. Continuing with AI lint...`
           );
         }
+
+        // Kick off ESLint detector in parallel with AI lint
+        panel.pushStatus({ id: 'eslint', text: 'Running ESLint rules…', icon: 'spinner' });
+        const eslintPromise: Promise<LintIssue[]> = eslintDetector
+          ? eslintDetector.lintFile(filePath, document.getText())
+          : Promise.resolve([]);
 
         progress.report({ message: 'Running AI lint...', increment: 50 });
         panel.pushStatus({ id: 'ai-lint', text: `Running AI lint on ${fileName}...`, icon: 'spinner' });
@@ -138,23 +147,38 @@ export async function runAllChecks(
           vscode.window.showErrorMessage(`AI lint failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
 
+        // Await ESLint results
+        let eslintIssues: LintIssue[] = [];
+        try {
+          eslintIssues = await eslintPromise;
+          panel.pushStatus({ id: 'eslint', text: `ESLint: ${eslintIssues.length} issue(s)`, icon: 'check', replace: true });
+        } catch (error) {
+          console.error('ESLint detector failed:', error);
+          panel.pushStatus({ id: 'eslint', text: 'ESLint failed', icon: 'error', replace: true });
+        }
+
         progress.report({ message: 'Done!', increment: 50 });
         panel.pushStatus({ id: 'done', text: 'Analysis complete', icon: 'check' });
 
-        // Set all diagnostics for main file
-        diagnosticProvider.setAllDiagnostics(document.uri, lintIssues, gitIssues);
+        // Set all diagnostics for main file. lintIssues stays AI-only;
+        // eslintIssues is passed separately so the diagnostic provider can
+        // label them with their own source ('Team AI Linter (ESLint)').
+        diagnosticProvider.setAllDiagnostics(document.uri, lintIssues, gitIssues, eslintIssues);
 
         // Set diagnostics for imported files
         setImportedFileDiagnostics(diagnosticProvider, importedFileIssues);
 
         // Log detailed results to output channel
-        logResults(formatter, filePath, lintIssues, importedFileIssues, gitIssues, unresolvedImports, lintedFiles);
+        logResults(formatter, filePath, lintIssues, importedFileIssues, gitIssues, eslintIssues, unresolvedImports, lintedFiles);
 
-        // Store results for later prompt generation
+        // Store results for later prompt generation. ESLint issues are
+        // merged into the stored lintIssues so prompt generation and
+        // result inspection see all issues together.
+        const storedLintIssues = eslintIssues.length > 0 ? [...lintIssues, ...eslintIssues] : lintIssues;
         LintResultStore.storeSingleFileResult({
           filePath,
           fileContent: document.getText(),
-          lintIssues,
+          lintIssues: storedLintIssues,
           importedIssues: importedFileIssues,
           gitIssues
         });
@@ -163,7 +187,7 @@ export async function runAllChecks(
         await updateLastLintedTimestampForDocument(document);
 
         // Update the webview panel with results
-        panel.updateResultsFromLint(filePath, document.getText(), lintIssues, importedFileIssues, gitIssues);
+        panel.updateResultsFromLint(filePath, document.getText(), lintIssues, importedFileIssues, gitIssues, eslintIssues);
       }
   );
 }
@@ -177,17 +201,24 @@ function logResults(
   lintIssues: LintIssue[],
   importedFileIssues: ImportedFileIssue[],
   gitIssues: GitIssue[],
+  eslintIssues: LintIssue[],
   unresolvedImports: Array<{ moduleSpecifier: string; line: number; fromFile: string }>,
   lintedFiles: string[]
 ): void {
   formatter.logFileHeader(filePath);
   formatter.logLintIssues(filePath, lintIssues);
+  formatter.logEslintIssues(filePath, eslintIssues);
   formatter.logImportedFileIssues(importedFileIssues);
   formatter.logGitIssues(filePath, gitIssues);
   formatter.logUnresolvedImports(unresolvedImports);
   formatter.logLintedFiles(lintedFiles);
 
-  if (lintIssues.length === 0 && importedFileIssues.length === 0 && gitIssues.length === 0)
+  if (
+    lintIssues.length === 0 &&
+    eslintIssues.length === 0 &&
+    importedFileIssues.length === 0 &&
+    gitIssues.length === 0
+  )
     formatter.logNoIssuesFound();
 
 

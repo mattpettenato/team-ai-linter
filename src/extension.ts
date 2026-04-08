@@ -23,6 +23,8 @@ import { LintResultStore } from './services/lintResultStore';
 import { generateFixPrompt, generateFolderFixPrompt } from './services/promptGeneratorService';
 import { LintResultsPanel } from './webview/lintResultsPanel';
 import { createAutoUpdater } from './services/autoUpdater';
+import { isEslintLayerEnabled } from './config/configLoader';
+import { resetEslintCache } from './services/detection/eslintDetector';
 
 let diagnosticProvider: DiagnosticProvider;
 let extensionPath: string;
@@ -49,6 +51,25 @@ export function activate(context: vscode.ExtensionContext) {
   // Initialize diagnostic provider
   diagnosticProvider = new DiagnosticProvider();
   context.subscriptions.push(diagnosticProvider);
+
+  if (isEslintLayerEnabled()) {
+    // Warm up ESLint in the background — first lint will be much faster
+    void Promise.all([
+      import('eslint'),
+      import('checksumai-eslint-config'),
+    ]).catch(err => console.warn('[team-ai-linter] ESLint warm-up failed:', err));
+  }
+
+  context.subscriptions.push(
+      vscode.workspace.onDidChangeConfiguration(e => {
+        if (
+          e.affectsConfiguration('teamAiLinter.enableEslintLayer') ||
+          e.affectsConfiguration('teamAiLinter.eslintTypeAwareRules')
+        )
+          resetEslintCache();
+
+      })
+  );
 
   // Create status bar button
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);

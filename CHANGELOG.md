@@ -6,6 +6,56 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2026-04-08] — v0.5.0
+
+### Added
+- **ESLint Detector Layer**: New detection layer that runs alongside the existing AI, deterministic, AST, and git layers — surfaces ESLint findings as inline VS Code diagnostics
+  - Single-sourced from the public [`checksumai-eslint-config`](https://www.npmjs.com/package/checksumai-eslint-config) npm package (`^0.0.10`) — upstream rule updates flow in via `npm update` with no porting required
+  - Three rules enforced inline:
+    - **`checksum/one-test-per-file`**: Exactly one `test()` call per `*.checksum.spec.ts` file
+    - **`checksum/correct-test-directory`**: `*.checksum.spec.ts` / `*.checksum.md` files must live under a `tests/` directory
+    - **`@typescript-eslint/no-floating-promises`**: Type-aware check for unawaited promises — uses `parserOptions.projectService: true` to auto-discover the nearest `tsconfig.json`
+  - Lazy workspace-scoped singleton with cache (~330x speedup measured: 994 ms cold → 3 ms warm)
+  - Background warm-up on extension activation so the first user-triggered lint doesn't pay the ~300-500 ms ESLint cold-start cost
+  - Graceful degradation: if the ESLint instance fails to construct or `lintText` throws, the layer logs a warning and returns zero issues rather than crashing the lint run
+  - New **`Team AI Linter (ESLint)`** diagnostic source so users can tell which layer fired each issue
+  - ESLint issues display in the existing webview panel and output channel alongside other detectors
+- **Two new VS Code settings**:
+  - `teamAiLinter.enableEslintLayer` (boolean, default `true`) — master switch for the ESLint layer
+  - `teamAiLinter.eslintTypeAwareRules` (boolean, default `true`) — escape hatch that disables `@typescript-eslint/no-floating-promises` on repos where type-aware linting misbehaves
+- **`package:vsix` build script** (`tools/package-vsix.sh`): Stages a clean prod-only `node_modules/` install in a temp directory and packages from there — keeps the repo's `.vscodeignore` untouched while still shipping the runtime ESLint dep tree inside the vsix
+- **Comprehensive automated test suite** with 5 test runners and 105 total assertions:
+  - `npm run test:fixtures` — upstream rule edge cases (24 tests)
+  - `npm run test:detector` — exercises the real `eslintDetector.ts` source via `tsx` (17 tests)
+  - `npm run test:diagnostics` — 3-source preservation in `DiagnosticProvider` (10 tests)
+  - `npm run test:regression` — existing deterministic/AST/git detectors still work (21 tests)
+  - `npm run test:vsix` — vsix integrity + bundled runtime deps present (33 checks)
+  - `npm run test:all` — runs everything (type-check + all five suites)
+
+### Changed
+- **`DiagnosticProvider` now manages three diagnostic sources** (`Team AI Linter`, `Team AI Linter (Git)`, `Team AI Linter (ESLint)`) and preserves all three across any setter call order — clearing one source no longer wipes the others
+- **Vsix size increased from ~1.8 MB → ~14.6 MB**: One-time bump, mostly `typescript-eslint` and TypeScript itself, both required at runtime by `@typescript-eslint/no-floating-promises`
+- **Bundle build externals**: esbuild now marks `eslint`, `@eslint/js`, `typescript-eslint`, `@typescript-eslint/*`, `globals`, and `checksumai-eslint-config` as externals — they ship as a real `node_modules/` tree inside the vsix and are loaded via runtime `require()` instead of being bundled into `dist/extension.js`
+
+### Known Limitations
+- **`checksum/correct-test-directory` is a no-op for `*.checksum.md` files**: The rule is documented to apply to both `*.checksum.spec.ts` and `*.checksum.md`, but the upstream `checksumai-eslint-config` `tests` preset doesn't register a parser/processor for `.md` files — so the rule is effectively a no-op for markdown until upstream adds a markdown processor
+
+---
+
+## [2026-04-08] — v0.4.8
+
+### Added
+- **`invalid_filename_colon` rule**: New error-severity, repo-wide deterministic check that flags any tracked file whose basename contains a `:` character
+  - Colons are invalid in Windows NTFS paths and break `git clone` / `git checkout` for teammates on Windows — a single offending file blocks the whole branch
+  - Scans tracked files via `git ls-files -z` so it respects `.gitignore` and only considers committed/staged paths
+  - Runs once per lint session (cached alongside the existing `checksum.config.ts` checks); the diagnostic surfaces on whatever file the user is currently linting
+  - Emits one issue per offender with the offending path and a suggested rename (`':'` → `'-'`)
+
+### Fixed
+- **`mergeAndDeduplicateIssues` collapsing distinct issues on the same line**: The dedup key was previously `${line}:${rule}`, which incorrectly merged multiple distinct issues from the same rule on the same line (e.g. several `invalid_filename_colon` offenders all reported at line 1) into a single diagnostic. The key now includes the message so distinct issues are preserved while true duplicates are still deduped.
+
+---
+
 ## [2026-03-12] — v0.4.7
 
 ### Added

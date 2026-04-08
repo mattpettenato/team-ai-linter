@@ -19,6 +19,10 @@ import { LintIssue, GitIssue } from '../types';
 // Re-export types for backward compatibility with existing imports
 export type { LintIssue, GitIssue } from '../types';
 
+const SRC_LINT = 'Team AI Linter';
+const SRC_GIT = 'Team AI Linter (Git)';
+const SRC_ESLINT = 'Team AI Linter (ESLint)';
+
 export class DiagnosticProvider implements vscode.Disposable {
   private collection: vscode.DiagnosticCollection;
 
@@ -31,8 +35,9 @@ export class DiagnosticProvider implements vscode.Disposable {
    */
   setLintDiagnostics(uri: vscode.Uri, issues: LintIssue[]): void {
     const diagnostics = issues.map(issue => this.lintIssueToDiagnostic(issue));
-    const existing = this.getGitDiagnostics(uri);
-    this.collection.set(uri, [...diagnostics, ...existing]);
+    const git = this.getGitDiagnostics(uri);
+    const eslint = this.getEslintDiagnostics(uri);
+    this.collection.set(uri, [...diagnostics, ...git, ...eslint]);
   }
 
   /**
@@ -40,17 +45,34 @@ export class DiagnosticProvider implements vscode.Disposable {
    */
   setGitDiagnostics(uri: vscode.Uri, issues: GitIssue[]): void {
     const diagnostics = issues.map(issue => this.gitIssueToDiagnostic(issue));
-    const existing = this.getLintDiagnostics(uri);
-    this.collection.set(uri, [...existing, ...diagnostics]);
+    const lint = this.getLintDiagnostics(uri);
+    const eslint = this.getEslintDiagnostics(uri);
+    this.collection.set(uri, [...lint, ...diagnostics, ...eslint]);
   }
 
   /**
-   * Set both AI lint and git diagnostics at once
+   * Set ESLint diagnostics for a document
    */
-  setAllDiagnostics(uri: vscode.Uri, lintIssues: LintIssue[], gitIssues: GitIssue[]): void {
-    const lintDiagnostics = lintIssues.map(issue => this.lintIssueToDiagnostic(issue));
-    const gitDiagnostics = gitIssues.map(issue => this.gitIssueToDiagnostic(issue));
-    this.collection.set(uri, [...lintDiagnostics, ...gitDiagnostics]);
+  setEslintDiagnostics(uri: vscode.Uri, issues: LintIssue[]): void {
+    const diagnostics = issues.map(issue => this.eslintIssueToDiagnostic(issue));
+    const lint = this.getLintDiagnostics(uri);
+    const git = this.getGitDiagnostics(uri);
+    this.collection.set(uri, [...lint, ...git, ...diagnostics]);
+  }
+
+  /**
+   * Set AI lint, git, and ESLint diagnostics at once
+   */
+  setAllDiagnostics(
+    uri: vscode.Uri,
+    lintIssues: LintIssue[],
+    gitIssues: GitIssue[],
+    eslintIssues: LintIssue[] = [],
+  ): void {
+    const lintD = lintIssues.map(issue => this.lintIssueToDiagnostic(issue));
+    const gitD = gitIssues.map(issue => this.gitIssueToDiagnostic(issue));
+    const eslintD = eslintIssues.map(issue => this.eslintIssueToDiagnostic(issue));
+    this.collection.set(uri, [...lintD, ...gitD, ...eslintD]);
   }
 
   /**
@@ -90,7 +112,27 @@ export class DiagnosticProvider implements vscode.Disposable {
         this.mapSeverity(issue.severity)
     );
 
-    diagnostic.source = 'Team AI Linter';
+    diagnostic.source = SRC_LINT;
+    diagnostic.code = issue.rule;
+
+    return diagnostic;
+  }
+
+  private eslintIssueToDiagnostic(issue: LintIssue): vscode.Diagnostic {
+    const startLine = Math.max(0, issue.line - 1);
+    const startCol = issue.column ? Math.max(0, issue.column - 1) : 0;
+    const endLine = issue.endLine ? Math.max(0, issue.endLine - 1) : startLine;
+    const endCol = issue.endColumn ? issue.endColumn : 1000;
+
+    const range = new vscode.Range(startLine, startCol, endLine, endCol);
+
+    const diagnostic = new vscode.Diagnostic(
+        range,
+        `[${issue.rule}] ${issue.message}`,
+        this.mapSeverity(issue.severity)
+    );
+
+    diagnostic.source = SRC_ESLINT;
     diagnostic.code = issue.rule;
 
     return diagnostic;
@@ -108,7 +150,7 @@ export class DiagnosticProvider implements vscode.Disposable {
           : vscode.DiagnosticSeverity.Warning
     );
 
-    diagnostic.source = 'Team AI Linter (Git)';
+    diagnostic.source = SRC_GIT;
     diagnostic.code = 'git-safety';
 
     return diagnostic;
@@ -128,11 +170,16 @@ export class DiagnosticProvider implements vscode.Disposable {
 
   private getLintDiagnostics(uri: vscode.Uri): vscode.Diagnostic[] {
     const all = this.collection.get(uri) || [];
-    return all.filter(d => d.source === 'Team AI Linter');
+    return all.filter(d => d.source === SRC_LINT);
   }
 
   private getGitDiagnostics(uri: vscode.Uri): vscode.Diagnostic[] {
     const all = this.collection.get(uri) || [];
-    return all.filter(d => d.source === 'Team AI Linter (Git)');
+    return all.filter(d => d.source === SRC_GIT);
+  }
+
+  private getEslintDiagnostics(uri: vscode.Uri): vscode.Diagnostic[] {
+    const all = this.collection.get(uri) || [];
+    return all.filter(d => d.source === SRC_ESLINT);
   }
 }

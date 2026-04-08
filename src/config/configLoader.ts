@@ -152,6 +152,22 @@ export function getEnvFilePath(): string | undefined {
 }
 
 /**
+ * Check if the ESLint detection layer is enabled
+ */
+export function isEslintLayerEnabled(): boolean {
+  const config = vscode.workspace.getConfiguration('teamAiLinter');
+  return config.get<boolean>('enableEslintLayer') ?? true;
+}
+
+/**
+ * Check if type-aware ESLint rules are enabled
+ */
+export function isEslintTypeAwareEnabled(): boolean {
+  const config = vscode.workspace.getConfiguration('teamAiLinter');
+  return config.get<boolean>('eslintTypeAwareRules') ?? true;
+}
+
+/**
  * Find checksum.config.ts by walking up from the given file path
  */
 export function findChecksumConfigPath(fromFilePath: string): string | undefined {
