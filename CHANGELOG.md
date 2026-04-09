@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2026-04-09] — v0.5.2
+
+### Fixed
+- **"Webview is disposed" crash**: Closing the results panel while a lint run was in progress threw `Error: Webview is disposed` and aborted the run. Added a `_disposed` guard to all webview access methods (`showLoading`, `pushStatus`, `clearStatus`, `updateResults`) so they silently bail out if the panel has been closed mid-run.
+
+### Changed
+- **README: removed stale GitHub token references**: The "Configure Auto-Updates" section and the Commands table still referenced a "Configure GitHub Token" command that was removed when the repo went public. Cleaned up to reflect that no token is needed.
+
+---
+
 ## [2026-04-08] — v0.5.1
 
 ### Fixed

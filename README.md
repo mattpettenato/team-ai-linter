@@ -39,17 +39,9 @@ npm run package
    ANTHROPIC_API_KEY=sk-ant-...
    ```
 
-### 2. Configure Auto-Updates
+### 2. Auto-Updates
 
-The extension automatically checks for updates on startup and every 4 hours. To enable this:
-
-1. Open Command Palette (`Cmd+Shift+P`)
-2. Run: `Team AI Linter: Configure GitHub Token`
-3. Paste a GitHub Personal Access Token with access to the `mattpettenato/team-ai-linter` repo
-   - **Classic token**: needs `repo` scope
-   - **Fine-grained token**: select the `mattpettenato/team-ai-linter` repo, grant `Contents: Read-only`
-
-Once configured, you'll get a notification whenever a new version is available with options to Install, Remind Later, or Skip.
+The extension automatically checks for updates on startup and every 4 hours. When a new version is available, you'll get a notification with options to Install, Remind Later, or Skip.
 
 To disable auto-checks, set `teamAiLinter.autoUpdate` to `false` in VS Code settings. You can always check manually via `Team AI Linter: Check for Updates`.
 
@@ -133,7 +125,6 @@ Settings available in VS Code settings (`Cmd+,`):
 | `Lint Selected Test Files` | Lint multiple selected files |
 | `Copy Fix Prompt` | Copy issues as AI fix prompt |
 | `Check for Updates` | Manually check for new versions |
-| `Configure GitHub Token` | Store GitHub PAT for update checks |
 
 ## Releasing a New Version
 

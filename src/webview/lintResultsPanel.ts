@@ -97,6 +97,7 @@ export class LintResultsPanel {
   private _currentData: PanelData | undefined;
   private _ignoredIssues: Set<string> = new Set();
   private _statusMessages: StatusMessage[] = [];
+  private _disposed = false;
 
   public static createOrShow(extensionUri: vscode.Uri): LintResultsPanel {
     const column = vscode.ViewColumn.Two;
@@ -146,6 +147,7 @@ export class LintResultsPanel {
   }
 
   public showLoading(filename: string): void {
+    if (this._disposed) return;
     this._statusMessages = [];
     this._panel.webview.html = generateLoadingHtml(filename, getExtensionVersion());
     this._panel.title = 'AI Lint Results';
@@ -156,6 +158,7 @@ export class LintResultsPanel {
    * Push a status message to the terminal activity log
    */
   public pushStatus(opts: { id: string; text: string; icon?: 'spinner' | 'check' | 'error' | 'info'; replace?: boolean }): void {
+    if (this._disposed) return;
     const message: StatusMessage = {
       type: 'status',
       id: opts.id,
@@ -189,11 +192,13 @@ export class LintResultsPanel {
    * Clear all status messages from the terminal
    */
   public clearStatus(): void {
+    if (this._disposed) return;
     this._statusMessages = [];
     this._panel.webview.postMessage({ type: 'statusClear' });
   }
 
   public updateResults(data: PanelData): void {
+    if (this._disposed) return;
     this._currentData = data;
     this._ignoredIssues.clear(); // Reset ignored issues when new results come in
     this._updateWebview();
@@ -606,6 +611,7 @@ Please fix this specific issue while maintaining the existing test logic.`;
   }
 
   public dispose(): void {
+    this._disposed = true;
     LintResultsPanel.currentPanel = undefined;
     this._panel.dispose();
     while (this._disposables.length) {
