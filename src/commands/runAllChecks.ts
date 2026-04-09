@@ -53,11 +53,12 @@ export async function runAllChecks(
   const output = getOutputChannel();
   const formatter = new OutputFormatter(output);
 
-  // Show loading state in webview panel
-  const panel = getLintResultsPanel();
+  // Always fetch the live panel — if the user closes it mid-run,
+  // getLintResultsPanel() will recreate it on the next call.
+  const panel = () => getLintResultsPanel();
   const fileName = path.basename(filePath);
-  panel.showLoading(fileName);
-  panel.pushStatus({ id: 'init', text: 'Initializing linter...', icon: 'spinner' });
+  panel().showLoading(fileName);
+  panel().pushStatus({ id: 'init', text: 'Initializing linter...', icon: 'spinner' });
 
   await vscode.window.withProgress(
       {
@@ -71,15 +72,15 @@ export async function runAllChecks(
 
         // Step 1: Git Safety Check
         progress.report({ message: 'Checking imports for git safety...', increment: 0 });
-        panel.pushStatus({ id: 'init', text: 'Configuration loaded', icon: 'check', replace: true });
-        panel.pushStatus({ id: 'git', text: 'Checking imports for git safety...', icon: 'spinner' });
+        panel().pushStatus({ id: 'init', text: 'Configuration loaded', icon: 'check', replace: true });
+        panel().pushStatus({ id: 'git', text: 'Checking imports for git safety...', icon: 'spinner' });
 
         // Get configuration
         const apiKey = getAnthropicApiKey(envPath);
         if (!apiKey) {
           vscode.window.showErrorMessage('ANTHROPIC_API_KEY not found in .env file');
           // Clear loading state before returning
-          panel.updateResultsFromLint(filePath, document.getText(), [], [], []);
+          panel().updateResultsFromLint(filePath, document.getText(), [], [], []);
           return;
         }
 
@@ -99,23 +100,23 @@ export async function runAllChecks(
         try {
           const importIssues = await gitSafetyChecker.checkImports(document.getText(), filePath);
           gitIssues.push(...importIssues);
-          panel.pushStatus({ id: 'git', text: `Git safety check complete${gitIssues.length > 0 ? ` (${gitIssues.length} issue${gitIssues.length !== 1 ? 's' : ''})` : ''}`, icon: 'check', replace: true });
+          panel().pushStatus({ id: 'git', text: `Git safety check complete${gitIssues.length > 0 ? ` (${gitIssues.length} issue${gitIssues.length !== 1 ? 's' : ''})` : ''}`, icon: 'check', replace: true });
         } catch (error) {
           formatter.logGitSafetyError(error);
-          panel.pushStatus({ id: 'git', text: 'Git safety check failed', icon: 'error', replace: true });
+          panel().pushStatus({ id: 'git', text: 'Git safety check failed', icon: 'error', replace: true });
           vscode.window.showWarningMessage(
               `Git safety check failed: ${error instanceof Error ? error.message : String(error)}. Continuing with AI lint...`
           );
         }
 
         // Kick off ESLint detector in parallel with AI lint
-        panel.pushStatus({ id: 'eslint', text: 'Running ESLint rules…', icon: 'spinner' });
+        panel().pushStatus({ id: 'eslint', text: 'Running ESLint rules…', icon: 'spinner' });
         const eslintPromise: Promise<LintIssue[]> = eslintDetector
           ? eslintDetector.lintFile(filePath, document.getText())
           : Promise.resolve([]);
 
         progress.report({ message: 'Running AI lint...', increment: 50 });
-        panel.pushStatus({ id: 'ai-lint', text: `Running AI lint on ${fileName}...`, icon: 'spinner' });
+        panel().pushStatus({ id: 'ai-lint', text: `Running AI lint on ${fileName}...`, icon: 'spinner' });
 
         // Step 2: AI Lint (with imported file analysis)
         let importedFileIssues: ImportedFileIssue[] = [];
@@ -140,10 +141,10 @@ export async function runAllChecks(
           lintedFiles = result.lintedFiles;
 
           const totalIssues = lintIssues.length + importedFileIssues.length;
-          panel.pushStatus({ id: 'ai-lint', text: `AI lint complete (${totalIssues} issue${totalIssues !== 1 ? 's' : ''} in ${lintedFiles.length} file${lintedFiles.length !== 1 ? 's' : ''})`, icon: 'check', replace: true });
+          panel().pushStatus({ id: 'ai-lint', text: `AI lint complete (${totalIssues} issue${totalIssues !== 1 ? 's' : ''} in ${lintedFiles.length} file${lintedFiles.length !== 1 ? 's' : ''})`, icon: 'check', replace: true });
         } catch (error) {
           console.error('AI lint failed:', error);
-          panel.pushStatus({ id: 'ai-lint', text: 'AI lint failed', icon: 'error', replace: true });
+          panel().pushStatus({ id: 'ai-lint', text: 'AI lint failed', icon: 'error', replace: true });
           vscode.window.showErrorMessage(`AI lint failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
 
@@ -151,14 +152,14 @@ export async function runAllChecks(
         let eslintIssues: LintIssue[] = [];
         try {
           eslintIssues = await eslintPromise;
-          panel.pushStatus({ id: 'eslint', text: `ESLint: ${eslintIssues.length} issue(s)`, icon: 'check', replace: true });
+          panel().pushStatus({ id: 'eslint', text: `ESLint: ${eslintIssues.length} issue(s)`, icon: 'check', replace: true });
         } catch (error) {
           console.error('ESLint detector failed:', error);
-          panel.pushStatus({ id: 'eslint', text: 'ESLint failed', icon: 'error', replace: true });
+          panel().pushStatus({ id: 'eslint', text: 'ESLint failed', icon: 'error', replace: true });
         }
 
         progress.report({ message: 'Done!', increment: 50 });
-        panel.pushStatus({ id: 'done', text: 'Analysis complete', icon: 'check' });
+        panel().pushStatus({ id: 'done', text: 'Analysis complete', icon: 'check' });
 
         // Set all diagnostics for main file. lintIssues stays AI-only;
         // eslintIssues is passed separately so the diagnostic provider can
@@ -187,7 +188,7 @@ export async function runAllChecks(
         await updateLastLintedTimestampForDocument(document);
 
         // Update the webview panel with results
-        panel.updateResultsFromLint(filePath, document.getText(), lintIssues, importedFileIssues, gitIssues, eslintIssues);
+        panel().updateResultsFromLint(filePath, document.getText(), lintIssues, importedFileIssues, gitIssues, eslintIssues);
       }
   );
 }

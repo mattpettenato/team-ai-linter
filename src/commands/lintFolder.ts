@@ -74,10 +74,11 @@ export async function lintSelectedFiles(
   const output = getOutputChannel();
   const formatter = new OutputFormatter(output);
 
-  // Open the panel with loading state BEFORE starting linting
-  const panel = getLintResultsPanel();
-  panel.showLoading('Selected Files');
-  panel.pushStatus({ id: 'init', text: `Selected ${fileUris.length} file${fileUris.length !== 1 ? 's' : ''} to lint`, icon: 'info' });
+  // Always fetch the live panel — if the user closes it mid-run,
+  // getLintResultsPanel() will recreate it on the next call.
+  const panel = () => getLintResultsPanel();
+  panel().showLoading('Selected Files');
+  panel().pushStatus({ id: 'init', text: `Selected ${fileUris.length} file${fileUris.length !== 1 ? 's' : ''} to lint`, icon: 'info' });
 
   // Run linting with progress
   const summary = await vscode.window.withProgress(
@@ -90,7 +91,7 @@ export async function lintSelectedFiles(
         const apiKey = getAnthropicApiKey(envPath);
         if (!apiKey) {
           vscode.window.showErrorMessage('ANTHROPIC_API_KEY not found');
-          panel.pushStatus({ id: 'error', text: 'API key not found', icon: 'error' });
+          panel().pushStatus({ id: 'error', text: 'API key not found', icon: 'error' });
           return { results: [], totalFiles: fileUris.length, cancelled: true };
         }
 
@@ -113,7 +114,7 @@ export async function lintSelectedFiles(
         for (let i = 0; i < fileUris.length; i++) {
           if (token.isCancellationRequested) {
             formatter.logCancelled();
-            panel.pushStatus({ id: 'cancelled', text: 'Linting cancelled by user', icon: 'error' });
+            panel().pushStatus({ id: 'cancelled', text: 'Linting cancelled by user', icon: 'error' });
             return { results, totalFiles: fileUris.length, cancelled: true };
           }
 
@@ -125,7 +126,7 @@ export async function lintSelectedFiles(
             increment: (1 / fileUris.length) * 100,
           });
 
-          panel.pushStatus({ id: `file-${i}`, text: `Processing ${fileName} (${i + 1}/${fileUris.length})...`, icon: 'spinner' });
+          panel().pushStatus({ id: `file-${i}`, text: `Processing ${fileName} (${i + 1}/${fileUris.length})...`, icon: 'spinner' });
 
           try {
             const content = fs.readFileSync(filePath, 'utf-8');
@@ -170,7 +171,7 @@ export async function lintSelectedFiles(
             });
 
             const issueCount = combinedMainIssues.length + importedIssues.length + gitIssues.length;
-            panel.pushStatus({ id: `file-${i}`, text: `${fileName}: ${issueCount} issue${issueCount !== 1 ? 's' : ''}`, icon: issueCount > 0 ? 'info' : 'check', replace: true });
+            panel().pushStatus({ id: `file-${i}`, text: `${fileName}: ${issueCount} issue${issueCount !== 1 ? 's' : ''}`, icon: issueCount > 0 ? 'info' : 'check', replace: true });
 
             // Log issues for this file
             formatter.logFileIssuesCompact(filePath, combinedMainIssues, importedIssues, gitIssues);
@@ -183,7 +184,7 @@ export async function lintSelectedFiles(
               await new Promise(resolve => setTimeout(resolve, 100));
 
           } catch (error) {
-            panel.pushStatus({ id: `file-${i}`, text: `${fileName}: error`, icon: 'error', replace: true });
+            panel().pushStatus({ id: `file-${i}`, text: `${fileName}: error`, icon: 'error', replace: true });
             formatter.logFileError(fileName, error);
           }
         }
@@ -202,7 +203,7 @@ export async function lintSelectedFiles(
   const totalAll = totalLint + totalImported + totalGit;
   const filesWithIssues = results.filter(r => r.lintIssues.length > 0 || r.importedIssues.length > 0 || r.gitIssues.length > 0).length;
 
-  panel.pushStatus({ id: 'done', text: `Analysis complete: ${totalAll} issue${totalAll !== 1 ? 's' : ''} in ${filesWithIssues}/${totalFiles} file${totalFiles !== 1 ? 's' : ''}`, icon: 'check' });
+  panel().pushStatus({ id: 'done', text: `Analysis complete: ${totalAll} issue${totalAll !== 1 ? 's' : ''} in ${filesWithIssues}/${totalFiles} file${totalFiles !== 1 ? 's' : ''}`, icon: 'check' });
 
   formatter.logFolderSummary(totalFiles, filesWithIssues, totalLint, totalImported, totalGit);
 
@@ -210,7 +211,7 @@ export async function lintSelectedFiles(
   LintResultStore.storeFolderResult(results);
 
   // Update the webview panel with results
-  panel.updateResultsFromFolder(results);
+  panel().updateResultsFromFolder(results);
 }
 
 /**
@@ -274,11 +275,12 @@ export async function lintFolder(
   const output = getOutputChannel();
   const formatter = new OutputFormatter(output);
 
-  // Open the panel with loading state BEFORE starting linting
-  const panel = getLintResultsPanel();
+  // Always fetch the live panel — if the user closes it mid-run,
+  // getLintResultsPanel() will recreate it on the next call.
+  const panel = () => getLintResultsPanel();
   const folderName = path.basename(folderPath);
-  panel.showLoading(folderName);
-  panel.pushStatus({ id: 'init', text: `Found ${testFiles.length} test file${testFiles.length !== 1 ? 's' : ''} in ${folderName}`, icon: 'info' });
+  panel().showLoading(folderName);
+  panel().pushStatus({ id: 'init', text: `Found ${testFiles.length} test file${testFiles.length !== 1 ? 's' : ''} in ${folderName}`, icon: 'info' });
 
   // Run linting with progress - returns summary when done
   const summary = await vscode.window.withProgress(
@@ -291,7 +293,7 @@ export async function lintFolder(
         const apiKey = getAnthropicApiKey(envPath);
         if (!apiKey) {
           vscode.window.showErrorMessage('ANTHROPIC_API_KEY not found');
-          panel.pushStatus({ id: 'error', text: 'API key not found', icon: 'error' });
+          panel().pushStatus({ id: 'error', text: 'API key not found', icon: 'error' });
           return { results: [], totalFiles: testFiles.length, cancelled: true };
         }
 
@@ -315,7 +317,7 @@ export async function lintFolder(
         for (let i = 0; i < testFiles.length; i++) {
           if (token.isCancellationRequested) {
             formatter.logCancelled();
-            panel.pushStatus({ id: 'cancelled', text: 'Linting cancelled by user', icon: 'error' });
+            panel().pushStatus({ id: 'cancelled', text: 'Linting cancelled by user', icon: 'error' });
             return { results, totalFiles: testFiles.length, cancelled: true };
           }
 
@@ -327,7 +329,7 @@ export async function lintFolder(
             increment: (1 / testFiles.length) * 100,
           });
 
-          panel.pushStatus({ id: `file-${i}`, text: `Processing ${fileName} (${i + 1}/${testFiles.length})...`, icon: 'spinner' });
+          panel().pushStatus({ id: `file-${i}`, text: `Processing ${fileName} (${i + 1}/${testFiles.length})...`, icon: 'spinner' });
 
           try {
             const content = fs.readFileSync(filePath, 'utf-8');
@@ -373,7 +375,7 @@ export async function lintFolder(
             });
 
             const issueCount = combinedMainIssues.length + importedIssues.length + gitIssues.length;
-            panel.pushStatus({ id: `file-${i}`, text: `${fileName}: ${issueCount} issue${issueCount !== 1 ? 's' : ''}`, icon: issueCount > 0 ? 'info' : 'check', replace: true });
+            panel().pushStatus({ id: `file-${i}`, text: `${fileName}: ${issueCount} issue${issueCount !== 1 ? 's' : ''}`, icon: issueCount > 0 ? 'info' : 'check', replace: true });
 
             // Log issues for this file (compact format)
             formatter.logFileIssuesCompact(filePath, combinedMainIssues, importedIssues, gitIssues);
@@ -386,7 +388,7 @@ export async function lintFolder(
               await new Promise(resolve => setTimeout(resolve, 100));
 
           } catch (error) {
-            panel.pushStatus({ id: `file-${i}`, text: `${fileName}: error`, icon: 'error', replace: true });
+            panel().pushStatus({ id: `file-${i}`, text: `${fileName}: error`, icon: 'error', replace: true });
             formatter.logFileError(fileName, error);
           }
         }
@@ -406,7 +408,7 @@ export async function lintFolder(
   const totalAll = totalLint + totalImported + totalGit;
   const filesWithIssues = results.filter(r => r.lintIssues.length > 0 || r.importedIssues.length > 0 || r.gitIssues.length > 0).length;
 
-  panel.pushStatus({ id: 'done', text: `Folder analysis complete: ${totalAll} issue${totalAll !== 1 ? 's' : ''} in ${filesWithIssues}/${totalFiles} file${totalFiles !== 1 ? 's' : ''}`, icon: 'check' });
+  panel().pushStatus({ id: 'done', text: `Folder analysis complete: ${totalAll} issue${totalAll !== 1 ? 's' : ''} in ${filesWithIssues}/${totalFiles} file${totalFiles !== 1 ? 's' : ''}`, icon: 'check' });
 
   formatter.logFolderSummary(totalFiles, filesWithIssues, totalLint, totalImported, totalGit);
 
@@ -414,5 +416,5 @@ export async function lintFolder(
   LintResultStore.storeFolderResult(results);
 
   // Update the webview panel with results
-  panel.updateResultsFromFolder(results);
+  panel().updateResultsFromFolder(results);
 }

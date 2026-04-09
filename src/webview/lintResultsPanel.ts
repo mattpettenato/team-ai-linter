@@ -100,15 +100,23 @@ export class LintResultsPanel {
   private _disposed = false;
 
   public static createOrShow(extensionUri: vscode.Uri): LintResultsPanel {
-    const column = vscode.ViewColumn.Two;
+    const column = vscode.ViewColumn.Beside;
 
-    // If we already have a panel, show it
-    if (LintResultsPanel.currentPanel) {
+    // If we already have a panel and it's still alive, show it
+    if (LintResultsPanel.currentPanel && !LintResultsPanel.currentPanel._disposed) {
+      console.log('[team-ai-linter] Reusing existing panel');
       LintResultsPanel.currentPanel._panel.reveal(column);
       return LintResultsPanel.currentPanel;
     }
 
-    // Otherwise, create a new panel
+    // Clean up stale reference if disposed
+    if (LintResultsPanel.currentPanel) {
+      console.log('[team-ai-linter] Previous panel was disposed, creating new one');
+    }
+    LintResultsPanel.currentPanel = undefined;
+
+    // Create a new panel
+    console.log('[team-ai-linter] Creating new webview panel');
     const panel = vscode.window.createWebviewPanel(
         LintResultsPanel.viewType,
         'AI Lint Results',
@@ -136,7 +144,10 @@ export class LintResultsPanel {
     this._updateWebview();
 
     // Handle panel disposal
-    this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
+    this._panel.onDidDispose(() => {
+      console.log('[team-ai-linter] Webview panel disposed');
+      this.dispose();
+    }, null, this._disposables);
 
     // Handle messages from webview
     this._panel.webview.onDidReceiveMessage(
@@ -151,7 +162,7 @@ export class LintResultsPanel {
     this._statusMessages = [];
     this._panel.webview.html = generateLoadingHtml(filename, getExtensionVersion());
     this._panel.title = 'AI Lint Results';
-    this._panel.reveal(vscode.ViewColumn.Two);
+    this._panel.reveal(vscode.ViewColumn.Beside);
   }
 
   /**
@@ -212,7 +223,7 @@ export class LintResultsPanel {
     this._panel.title = data.totalIssues > 0
       ? `AI Lint Results (${data.totalIssues})`
       : 'AI Lint Results';
-    this._panel.reveal(vscode.ViewColumn.Two);
+    this._panel.reveal(vscode.ViewColumn.Beside);
   }
 
   public getIgnoredIssues(): Set<string> {
