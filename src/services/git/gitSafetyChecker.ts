@@ -108,6 +108,18 @@ export class GitSafetyChecker {
       return gitIssue ? [gitIssue] : [];
     }
 
+    // Path resolution failed. If the specifier matches a tsconfig alias pattern,
+    // it's a local import with a missing file — not an npm package.
+    if (this.pathResolver.matchesAnyPathAlias(imp.moduleSpecifier, filePath)) {
+      return [{
+        importLine: imp.line,
+        moduleSpecifier: imp.moduleSpecifier,
+        message: `Cannot resolve import "${imp.moduleSpecifier}" — matches a tsconfig path alias but no file exists at the resolved location.`,
+        severity: 'error',
+        isMissing: true,
+      }];
+    }
+
     // Could not resolve via tsconfig - treat as npm package
     return this.checkPackageImport(imp, filePath);
   }
@@ -122,20 +134,26 @@ export class GitSafetyChecker {
     if (this.packageJsonService.isNodeBuiltinModule(baseName))
       return [];
 
-
-    // Special case: checksum packages bundled together
-    if (this.packageJsonService.isChecksumPackage(baseName) &&
-        this.packageJsonService.hasChecksumDependency(filePath))
+    // Skip if installed in node_modules anywhere up the tree.
+    // This covers transitive dependencies (e.g. @checksum-ai/runtime is a
+    // subdep of checksumai) without requiring the package to be declared
+    // directly in package.json.
+    if (this.packageJsonService.isInstalledInNodeModules(baseName, filePath))
       return [];
 
-
     const validation = this.packageJsonService.validateDependency(baseName, filePath);
+
+    // No package.json found anywhere up the tree — we have no project context
+    // to validate against. Skip rather than emit a noisy false positive (e.g.
+    // for scratch files in /tmp).
+    if (!validation.packageJsonPath)
+      return [];
 
     if (!validation.isDeclared) {
       return [{
         importLine: imp.line,
         moduleSpecifier: imp.moduleSpecifier,
-        message: `Package "${baseName}" is not declared in package.json - will fail on clean install`,
+        message: `Package "${baseName}" is not declared in package.json and is not installed in node_modules - will fail on clean install`,
         severity: 'error',
       }];
     }

@@ -22,7 +22,7 @@ import { getAnthropicApiKey } from '../config/envLoader';
 import { loadRules, getWorkspaceRoot, getClaudeModel, getMinConfidence } from '../config/configLoader';
 import { isEslintLayerEnabled, isEslintTypeAwareEnabled } from '../config/configLoader';
 import { createLintServices } from '../services/serviceFactory';
-import { getOutputChannel, getLintResultsPanel } from '../extension';
+import { getOutputChannel, getLintResultsPanel, refreshShowResultsStatusBar } from '../extension';
 import { updateLastLintedTimestampForDocument } from '../services/timestampService';
 import { LintResultStore } from '../services/lintResultStore';
 import { OutputFormatter, setImportedFileDiagnostics } from '../output';
@@ -183,6 +183,7 @@ export async function runAllChecks(
           importedIssues: importedFileIssues,
           gitIssues
         });
+        refreshShowResultsStatusBar();
 
         // Update last linted timestamp in the file
         await updateLastLintedTimestampForDocument(document);

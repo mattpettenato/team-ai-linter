@@ -237,51 +237,24 @@ export class PackageJsonService {
   }
 
   /**
-   * Check if any checksum-related package is declared in package.json
-  /* imports when the project
-   * has any checksum dependency (like "checksumai")
+   * Check if a package is installed in any node_modules directory walking up
+   * from the given file. This catches transitive dependencies that are not
+   * declared directly in package.json but are still resolvable at runtime
+   * because a parent dependency pulls them in.
    */
-  hasChecksumDependency(fromFile: string): boolean {
-    const allDeps = this.getAllDependencies(fromFile);
+  isInstalledInNodeModules(packageName: string, fromFile: string): boolean {
+    let currentDir = path.dirname(fromFile);
 
-    for (const dep of allDeps) {
-      // Match: checksumai, @checksum/*, @checksum-ai/*, checksum-*
-      if (
-        dep === 'checksumai' ||
-        dep.startsWith('@checksum/') ||
-        dep.startsWith('@checksum-ai/') ||
-        dep.startsWith('checksum-') ||
-        dep.includes('checksum')
-      )
+    while (true) {
+      const candidate = path.join(currentDir, 'node_modules', packageName, 'package.json');
+      if (fs.existsSync(candidate))
         return true;
 
+      const parentDir = path.dirname(currentDir);
+      if (parentDir === currentDir)
+        return false;
+      currentDir = parentDir;
     }
-
-    return false;
-  }
-
-  /**
-   * Check if a package name is a checksum-related package or bundled dependency
-   * These packages are bundled within checksumai and don't need explicit declaration
-   */
-  isChecksumPackage(packageName: string): boolean {
-    // Packages bundled with checksumai
-    const bundledPackages = [
-      '@playwright/test',
-      '@playwright/experimental-ct-react',
-    ];
-
-    if (bundledPackages.includes(packageName))
-      return true;
-
-
-    return (
-      packageName === 'checksumai' ||
-      packageName.startsWith('@checksum/') ||
-      packageName.startsWith('@checksum-ai/') ||
-      packageName.startsWith('checksum-') ||
-      packageName.includes('checksum')
-    );
   }
 
   /**

@@ -31,6 +31,7 @@ let extensionPath: string;
 let extensionUri: vscode.Uri;
 let outputChannel: vscode.OutputChannel;
 let statusBarItem: vscode.StatusBarItem;
+let showResultsStatusBarItem: vscode.StatusBarItem;
 
 export function activate(context: vscode.ExtensionContext) {
   console.log('Team AI Linter extension is now active');
@@ -77,6 +78,14 @@ export function activate(context: vscode.ExtensionContext) {
   statusBarItem.text = '$(beaker) AI Lint';
   statusBarItem.tooltip = 'Run AI Lint + Git Check (Cmd+Shift+L)';
   context.subscriptions.push(statusBarItem);
+
+  // "Show last results" status bar item — visible only when there are stored results,
+  // so users can re-open the panel without re-running the linter.
+  showResultsStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
+  showResultsStatusBarItem.command = 'teamAiLinter.showResults';
+  showResultsStatusBarItem.text = '$(list-unordered) Lint Results';
+  showResultsStatusBarItem.tooltip = 'Show last AI Lint results';
+  context.subscriptions.push(showResultsStatusBarItem);
 
   // Show/hide status bar based on active editor
   context.subscriptions.push(
@@ -307,6 +316,41 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(lintScmFilesCmd);
 
+  // Show last results command — reopens the webview panel from stored results
+  // without re-running the linter. Useful when the user accidentally closes
+  // the panel.
+  const showResults = vscode.commands.registerCommand('teamAiLinter.showResults', async () => {
+    if (!LintResultStore.hasResults()) {
+      vscode.window.showInformationMessage(
+          'No lint results to show yet. Run the linter first (Cmd+Shift+L).'
+      );
+      return;
+    }
+
+    const panel = LintResultsPanel.createOrShow(extensionUri);
+    const resultType = LintResultStore.getLastResultType();
+
+    if (resultType === 'single') {
+      const r = LintResultStore.getLastSingleFileResult();
+      if (r) {
+        // ESLint issues are already merged into stored lintIssues (see runAllChecks.ts).
+        // Pass [] for eslintIssues to avoid double-counting.
+        panel.updateResultsFromLint(
+            r.filePath,
+            r.fileContent,
+            r.lintIssues,
+            r.importedIssues ?? [],
+            r.gitIssues ?? [],
+            []
+        );
+      }
+    } else if (resultType === 'folder') {
+      const r = LintResultStore.getLastFolderResult();
+      if (r) panel.updateResultsFromFolder(r.results);
+    }
+  });
+  context.subscriptions.push(showResults);
+
   // Copy fix prompt command - copies last lint results as a fix prompt
   // Accepts optional ignoredIssues parameter (array of "file:line:rule" strings)
   const copyFixPrompt = vscode.commands.registerCommand(
@@ -410,6 +454,20 @@ function updateStatusBarVisibility(): void {
   } else {
     statusBarItem.hide();
   }
+
+  refreshShowResultsStatusBar();
+}
+
+/**
+ * Show or hide the "Lint Results" status bar item based on whether any
+ * results are currently stored. Called after each run and on editor change.
+ */
+export function refreshShowResultsStatusBar(): void {
+  if (!showResultsStatusBarItem) return;
+  if (LintResultStore.hasResults())
+    showResultsStatusBarItem.show();
+  else
+    showResultsStatusBarItem.hide();
 }
 
 export function deactivate() {

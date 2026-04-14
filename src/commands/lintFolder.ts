@@ -22,7 +22,7 @@ import { getAnthropicApiKey } from '../config/envLoader';
 import { loadRules, getClaudeModel, getMinConfidence, isEslintLayerEnabled, isEslintTypeAwareEnabled } from '../config/configLoader';
 import { createLintServices } from '../services/serviceFactory';
 import { ImportedFileIssue } from '../services/importedFileLinter';
-import { getOutputChannel, getLintResultsPanel } from '../extension';
+import { getOutputChannel, getLintResultsPanel, refreshShowResultsStatusBar } from '../extension';
 import { updateLastLintedTimestamp } from '../services/timestampService';
 import { LintResultStore } from '../services/lintResultStore';
 import { OutputFormatter, setImportedFileDiagnostics } from '../output';
@@ -209,6 +209,7 @@ export async function lintSelectedFiles(
 
   // Store results for later prompt generation
   LintResultStore.storeFolderResult(results);
+  refreshShowResultsStatusBar();
 
   // Update the webview panel with results
   panel().updateResultsFromFolder(results);
@@ -414,6 +415,7 @@ export async function lintFolder(
 
   // Store results for later prompt generation
   LintResultStore.storeFolderResult(results);
+  refreshShowResultsStatusBar();
 
   // Update the webview panel with results
   panel().updateResultsFromFolder(results);

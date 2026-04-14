@@ -178,6 +178,22 @@ export class PathResolver {
   }
 
   /**
+   * Check whether a module specifier matches any tsconfig path alias pattern,
+   * regardless of whether the resolved file exists on disk. Used to distinguish
+   * "this is a path-aliased local import" from "this is an npm package import".
+   */
+  matchesAnyPathAlias(moduleSpecifier: string, fromFile: string): boolean {
+    if (this.pathMappings.size === 0 && !this.loadedTsConfigPath)
+      this.tryLoadTsConfigFromFileContext(fromFile);
+
+    for (const pattern of this.pathMappings.keys()) {
+      if (this.matchPattern(moduleSpecifier, pattern) !== null)
+        return true;
+    }
+    return false;
+  }
+
+  /**
    * Resolve an import specifier to an absolute file path
    * Returns null if the file doesn't exist or can't be resolved
    */

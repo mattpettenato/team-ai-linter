@@ -2,7 +2,7 @@
   "name": "team-ai-linter",
   "displayName": "Team AI Linter",
   "description": "AI-powered test linting and import-graph git safety checks for Cursor IDE",
-  "version": "0.5.3",
+  "version": "0.6.0",
   "publisher": "checksum",
   "license": "MIT",
   "repository": {
@@ -48,6 +48,10 @@
       {
         "command": "teamAiLinter.copyFixPrompt",
         "title": "Copy Fix Prompt"
+      },
+      {
+        "command": "teamAiLinter.showResults",
+        "title": "Team AI Linter: Show Last Results"
       },
       {
         "command": "teamAiLinter.checkForUpdates",
