@@ -17,7 +17,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { DiagnosticProvider, LintIssue } from '../diagnostics/diagnosticProvider';
-import { GitIssue } from '../types';
+import { GitIssue, WorkspaceIssue } from '../types';
 import { getAnthropicApiKey } from '../config/envLoader';
 import { loadRules, getClaudeModel, getMinConfidence, isEslintLayerEnabled, isEslintTypeAwareEnabled } from '../config/configLoader';
 import { createLintServices } from '../services/serviceFactory';
@@ -27,6 +27,7 @@ import { updateLastLintedTimestamp } from '../services/timestampService';
 import { LintResultStore } from '../services/lintResultStore';
 import { OutputFormatter, setImportedFileDiagnostics } from '../output';
 import { resetChecksumConfigCache } from '../services/detection/deterministicDetector';
+import { detectWorkspaceIssues } from '../services/detection/workspaceIssues';
 
 const TEST_FILE_PATTERN = /(test|spec)\.(ts|tsx|js|jsx)$|checksum\.config\.ts$/;
 
@@ -39,6 +40,7 @@ interface FolderLintResult {
 
 interface FolderLintSummary {
   results: FolderLintResult[];
+  workspaceIssues: WorkspaceIssue[];
   totalFiles: number;
   cancelled: boolean;
 }
@@ -92,7 +94,7 @@ export async function lintSelectedFiles(
         if (!apiKey) {
           vscode.window.showErrorMessage('ANTHROPIC_API_KEY not found');
           panel().pushStatus({ id: 'error', text: 'API key not found', icon: 'error' });
-          return { results: [], totalFiles: fileUris.length, cancelled: true };
+          return { results: [], workspaceIssues: [], totalFiles: fileUris.length, cancelled: true };
         }
 
         const rules = loadRules(workspaceRoot);
@@ -107,6 +109,10 @@ export async function lintSelectedFiles(
           eslintTypeAware: isEslintTypeAwareEnabled(),
         });
 
+        // Workspace-scoped scan: runs once for the whole folder lint, in
+        // parallel with the per-file work.
+        const workspaceIssuesPromise = detectWorkspaceIssues(workspaceRoot);
+
         const results: FolderLintResult[] = [];
 
         formatter.logFolderHeader('Selected Files', fileUris.length);
@@ -115,7 +121,7 @@ export async function lintSelectedFiles(
           if (token.isCancellationRequested) {
             formatter.logCancelled();
             panel().pushStatus({ id: 'cancelled', text: 'Linting cancelled by user', icon: 'error' });
-            return { results, totalFiles: fileUris.length, cancelled: true };
+            return { results, workspaceIssues: [], totalFiles: fileUris.length, cancelled: true };
           }
 
           const filePath = fileUris[i].fsPath;
@@ -189,14 +195,21 @@ export async function lintSelectedFiles(
           }
         }
 
-        return { results, totalFiles: fileUris.length, cancelled: false };
+        let workspaceIssues: WorkspaceIssue[] = [];
+        try {
+          workspaceIssues = await workspaceIssuesPromise;
+        } catch (error) {
+          console.error('Workspace issue scan failed:', error);
+        }
+
+        return { results, workspaceIssues, totalFiles: fileUris.length, cancelled: false };
       }
   );
 
   if (summary.cancelled)
     return;
 
-  const { results, totalFiles } = summary;
+  const { results, workspaceIssues, totalFiles } = summary;
   const totalLint = results.reduce((sum, r) => sum + r.lintIssues.length, 0);
   const totalImported = results.reduce((sum, r) => sum + r.importedIssues.length, 0);
   const totalGit = results.reduce((sum, r) => sum + r.gitIssues.length, 0);
@@ -206,13 +219,15 @@ export async function lintSelectedFiles(
   panel().pushStatus({ id: 'done', text: `Analysis complete: ${totalAll} issue${totalAll !== 1 ? 's' : ''} in ${filesWithIssues}/${totalFiles} file${totalFiles !== 1 ? 's' : ''}`, icon: 'check' });
 
   formatter.logFolderSummary(totalFiles, filesWithIssues, totalLint, totalImported, totalGit);
+  formatter.logWorkspaceIssues(workspaceIssues);
 
   // Store results for later prompt generation
-  LintResultStore.storeFolderResult(results);
+  LintResultStore.storeFolderResult(results, workspaceIssues);
   refreshShowResultsStatusBar();
 
-  // Update the webview panel with results
-  panel().updateResultsFromFolder(results);
+  // Update the webview panel with results (workspace issues surface in their
+  // own top-level section — they are not attached to any individual file).
+  panel().updateResultsFromFolder(results, workspaceIssues);
 }
 
 /**
@@ -295,7 +310,7 @@ export async function lintFolder(
         if (!apiKey) {
           vscode.window.showErrorMessage('ANTHROPIC_API_KEY not found');
           panel().pushStatus({ id: 'error', text: 'API key not found', icon: 'error' });
-          return { results: [], totalFiles: testFiles.length, cancelled: true };
+          return { results: [], workspaceIssues: [], totalFiles: testFiles.length, cancelled: true };
         }
 
         const rules = loadRules(workspaceRoot);
@@ -311,6 +326,10 @@ export async function lintFolder(
           eslintTypeAware: isEslintTypeAwareEnabled(),
         });
 
+        // Workspace-scoped scan: runs once for the whole folder lint, in
+        // parallel with the per-file work.
+        const workspaceIssuesPromise = detectWorkspaceIssues(workspaceRoot);
+
         const results: FolderLintResult[] = [];
 
         formatter.logFolderHeader(folderPath, testFiles.length);
@@ -319,7 +338,7 @@ export async function lintFolder(
           if (token.isCancellationRequested) {
             formatter.logCancelled();
             panel().pushStatus({ id: 'cancelled', text: 'Linting cancelled by user', icon: 'error' });
-            return { results, totalFiles: testFiles.length, cancelled: true };
+            return { results, workspaceIssues: [], totalFiles: testFiles.length, cancelled: true };
           }
 
           const filePath = testFiles[i];
@@ -394,7 +413,14 @@ export async function lintFolder(
           }
         }
 
-        return { results, totalFiles: testFiles.length, cancelled: false };
+        let workspaceIssues: WorkspaceIssue[] = [];
+        try {
+          workspaceIssues = await workspaceIssuesPromise;
+        } catch (error) {
+          console.error('Workspace issue scan failed:', error);
+        }
+
+        return { results, workspaceIssues, totalFiles: testFiles.length, cancelled: false };
       }
   );
 
@@ -402,7 +428,7 @@ export async function lintFolder(
   if (summary.cancelled)
     return;
 
-  const { results, totalFiles } = summary;
+  const { results, workspaceIssues, totalFiles } = summary;
   const totalLint = results.reduce((sum, r) => sum + r.lintIssues.length, 0);
   const totalImported = results.reduce((sum, r) => sum + r.importedIssues.length, 0);
   const totalGit = results.reduce((sum, r) => sum + r.gitIssues.length, 0);
@@ -412,11 +438,13 @@ export async function lintFolder(
   panel().pushStatus({ id: 'done', text: `Folder analysis complete: ${totalAll} issue${totalAll !== 1 ? 's' : ''} in ${filesWithIssues}/${totalFiles} file${totalFiles !== 1 ? 's' : ''}`, icon: 'check' });
 
   formatter.logFolderSummary(totalFiles, filesWithIssues, totalLint, totalImported, totalGit);
+  formatter.logWorkspaceIssues(workspaceIssues);
 
   // Store results for later prompt generation
-  LintResultStore.storeFolderResult(results);
+  LintResultStore.storeFolderResult(results, workspaceIssues);
   refreshShowResultsStatusBar();
 
-  // Update the webview panel with results
-  panel().updateResultsFromFolder(results);
+  // Update the webview panel with results (workspace issues surface in their
+  // own top-level section — they are not attached to any individual file).
+  panel().updateResultsFromFolder(results, workspaceIssues);
 }

@@ -341,12 +341,13 @@ export function activate(context: vscode.ExtensionContext) {
             r.lintIssues,
             r.importedIssues ?? [],
             r.gitIssues ?? [],
-            []
+            [],
+            r.workspaceIssues ?? []
         );
       }
     } else if (resultType === 'folder') {
       const r = LintResultStore.getLastFolderResult();
-      if (r) panel.updateResultsFromFolder(r.results);
+      if (r) panel.updateResultsFromFolder(r.results, r.workspaceIssues ?? []);
     }
   });
   context.subscriptions.push(showResults);

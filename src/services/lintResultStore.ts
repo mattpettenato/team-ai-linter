@@ -15,6 +15,7 @@
  */
 import { LintIssue, GitIssue } from '../diagnostics/diagnosticProvider';
 import { ImportedFileIssue } from './importedFileLinter';
+import { WorkspaceIssue } from '../types';
 
 export interface StoredLintResult {
   filePath: string;
@@ -22,6 +23,7 @@ export interface StoredLintResult {
   lintIssues: LintIssue[];
   importedIssues?: ImportedFileIssue[];
   gitIssues?: GitIssue[];
+  workspaceIssues?: WorkspaceIssue[];
   timestamp: Date;
 }
 
@@ -32,6 +34,7 @@ export interface StoredFolderResult {
     importedIssues: ImportedFileIssue[];
     gitIssues?: GitIssue[];
   }>;
+  workspaceIssues?: WorkspaceIssue[];
   timestamp: Date;
 }
 
@@ -59,9 +62,10 @@ class LintResultStoreClass {
   /**
    * Store results from folder linting
    */
-  storeFolderResult(results: StoredFolderResult['results']): void {
+  storeFolderResult(results: StoredFolderResult['results'], workspaceIssues: WorkspaceIssue[] = []): void {
     this.lastFolderResult = {
       results,
+      workspaceIssues,
       timestamp: new Date()
     };
     this.lastSingleFileResult = null;
@@ -98,13 +102,15 @@ class LintResultStoreClass {
       return (
         result.lintIssues.length > 0 ||
         (result.importedIssues?.length ?? 0) > 0 ||
-        (result.gitIssues?.length ?? 0) > 0
+        (result.gitIssues?.length ?? 0) > 0 ||
+        (result.workspaceIssues?.length ?? 0) > 0
       );
     }
     if (this.lastResultType === 'folder' && this.lastFolderResult) {
-      return this.lastFolderResult.results.some(
+      const folder = this.lastFolderResult;
+      return folder.results.some(
           r => r.lintIssues.length > 0 || r.importedIssues.length > 0 || (r.gitIssues?.length ?? 0) > 0
-      );
+      ) || (folder.workspaceIssues?.length ?? 0) > 0;
     }
     return false;
   }

@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { PanelData, DisplayIssue, FileResult, UnstagedFile, MissingFile } from './lintResultsPanel';
+import { PanelData, DisplayIssue, FileResult, UnstagedFile, MissingFile, DisplayWorkspaceIssue } from './lintResultsPanel';
 
 // Checksum logo with text - using currentColor for text to work in both light/dark themes
 const CHECKSUM_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 158 44" fill="none">
@@ -334,6 +334,51 @@ function renderMissingFilesAlert(missingFiles: MissingFile[]): string {
       <div class="unstaged-alert-body">
         <p class="unstaged-alert-desc">The following imported files <strong>do not exist</strong>. Your tests will fail. Create the files or fix the import paths.</p>
         ${fileListHtml}
+      </div>
+    </div>
+  `;
+}
+
+function renderWorkspaceSection(issues: DisplayWorkspaceIssue[] | undefined): string {
+  if (!issues || issues.length === 0)
+    return '';
+
+  const errorCount = issues.filter(i => i.severity === 'error').length;
+  const warningCount = issues.filter(i => i.severity === 'warning').length;
+  const infoCount = issues.filter(i => i.severity === 'info').length;
+
+  const countParts: string[] = [];
+  if (errorCount > 0)
+    countParts.push(`<span class="count-error">${errorCount} error${errorCount !== 1 ? 's' : ''}</span>`);
+  if (warningCount > 0)
+    countParts.push(`<span class="count-warning">${warningCount} warning${warningCount !== 1 ? 's' : ''}</span>`);
+  if (infoCount > 0)
+    countParts.push(`<span class="count-info">${infoCount} info</span>`);
+
+  const rowsHtml = issues.map(issue => {
+    const icon = getSeverityIcon(issue.severity);
+    const escapedPath = escapeHtml(issue.offenderPath).replace(/'/g, "\\'");
+    return `
+      <div class="workspace-issue" onclick="openFile('${escapedPath}')" title="Open ${escapeHtml(issue.offenderPath)}">
+        ${icon}
+        <span class="workspace-issue-rule">${escapeHtml(issue.rule)}</span>
+        <span class="workspace-issue-name">${escapeHtml(issue.offenderName)}</span>
+        <span class="workspace-issue-path">${escapeHtml(issue.offenderPath)}</span>
+        <div class="workspace-issue-message">${escapeHtml(issue.message)}</div>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="file-section workspace-section" data-errors="${errorCount}" data-warnings="${warningCount}" data-info="${infoCount}">
+      <div class="file-header workspace-header" onclick="toggleWorkspaceSection()">
+        <span class="collapse-icon" id="collapse-icon-workspace">&#x25BC;</span>
+        <span class="file-name">Workspace Issues</span>
+        <span class="file-path">Repo-wide checks</span>
+        <span class="issue-counts">${countParts.join(' ')}</span>
+      </div>
+      <div class="file-issues" id="file-issues-workspace">
+        ${rowsHtml}
       </div>
     </div>
   `;
@@ -764,16 +809,19 @@ export function generatePanelHtml(data: PanelData | undefined, version: string):
   const missingAlertHtml = data?.missingFiles ? renderMissingFilesAlert(data.missingFiles) : '';
   const summaryHtml = data ? renderSummary(data) : '';
   const filterHtml = renderFilterButtons(data);
+  const workspaceSectionHtml = renderWorkspaceSection(data?.workspaceIssues);
 
   let contentHtml = '';
-  if (!data || data.files.length === 0) {
+  const hasWorkspaceIssues = (data?.workspaceIssues?.length ?? 0) > 0;
+  if (!data || (data.files.length === 0 && !hasWorkspaceIssues)) {
     contentHtml = renderEmptyState();
   } else {
-    // Show all files - those with issues first, then clean files
+    // Workspace-scoped issues render at the top — they aren't tied to any
+    // one file. Per-file sections follow (issues first, clean files last).
     const filesWithIssues = data.files.filter(f => f.issues.length > 0);
     const cleanFiles = data.files.filter(f => f.issues.length === 0);
     const sortedFiles = [...filesWithIssues, ...cleanFiles];
-    contentHtml = sortedFiles
+    contentHtml = workspaceSectionHtml + sortedFiles
         .map((file, index) => renderFileSection(file, index))
         .join('');
   }
@@ -1110,6 +1158,60 @@ export function generatePanelHtml(data: PanelData | undefined, version: string):
 
     .file-issues.collapsed {
       display: none;
+    }
+
+    .file-section.workspace-section {
+      border-left: 3px solid var(--vscode-editorWarning-foreground, #cca700);
+    }
+
+    .workspace-header .file-name {
+      color: var(--vscode-editorWarning-foreground, #cca700);
+    }
+
+    .workspace-issue {
+      display: grid;
+      grid-template-columns: auto auto 1fr auto;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--vscode-panel-border);
+      cursor: pointer;
+      transition: background-color 0.1s;
+    }
+
+    .workspace-issue:hover {
+      background-color: var(--vscode-list-hoverBackground);
+    }
+
+    .workspace-issue-rule {
+      font-family: var(--vscode-editor-font-family, monospace);
+      font-size: 11px;
+      padding: 1px 6px;
+      border-radius: 3px;
+      background-color: var(--vscode-badge-background);
+      color: var(--vscode-badge-foreground);
+    }
+
+    .workspace-issue-name {
+      font-weight: 600;
+      color: var(--vscode-foreground);
+    }
+
+    .workspace-issue-path {
+      font-size: 11px;
+      color: var(--vscode-descriptionForeground);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      justify-self: end;
+      max-width: 45%;
+    }
+
+    .workspace-issue-message {
+      grid-column: 1 / -1;
+      font-size: 12px;
+      color: var(--vscode-descriptionForeground);
+      padding-left: 28px;
     }
 
     .issue {
@@ -1960,6 +2062,24 @@ export function generatePanelHtml(data: PanelData | undefined, version: string):
         issuesDiv.classList.add('collapsed');
         iconSpan.classList.add('collapsed');
       }
+    }
+
+    function toggleWorkspaceSection() {
+      const issuesDiv = document.getElementById('file-issues-workspace');
+      const iconSpan = document.getElementById('collapse-icon-workspace');
+      if (!issuesDiv || !iconSpan) return;
+
+      if (issuesDiv.classList.contains('collapsed')) {
+        issuesDiv.classList.remove('collapsed');
+        iconSpan.classList.remove('collapsed');
+      } else {
+        issuesDiv.classList.add('collapsed');
+        iconSpan.classList.add('collapsed');
+      }
+    }
+
+    function openFile(file) {
+      vscode.postMessage({ type: 'openFile', file: file });
     }
 
     function setFilter(filter) {

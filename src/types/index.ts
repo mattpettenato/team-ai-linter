@@ -29,6 +29,7 @@ export {
   GitIssue,
   ImportedFileIssue,
   UnresolvedImport,
+  WorkspaceIssue,
   isLintIssue,
   isGitIssue,
   isImportedFileIssue,

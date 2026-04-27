@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { LintIssue, GitIssue, ImportedFileIssue, UnresolvedImport } from './issues';
+import { LintIssue, GitIssue, ImportedFileIssue, UnresolvedImport, WorkspaceIssue } from './issues';
 
 /**
  * Result of linting a file with its imports
@@ -44,6 +44,8 @@ export interface SingleFileLintResult {
   importedIssues: ImportedFileIssue[];
   /** Git safety issues found */
   gitIssues: GitIssue[];
+  /** Workspace-scoped issues (e.g. repo-wide filename checks) */
+  workspaceIssues: WorkspaceIssue[];
 }
 
 /**

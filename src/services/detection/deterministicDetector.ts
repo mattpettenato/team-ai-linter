@@ -16,8 +16,6 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as vscode from 'vscode';
-import { execFileSync } from 'child_process';
 import { LintIssue, Severity } from '../../types';
 import { findChecksumAIBlocksWithDescription, isLineInChecksumAIBlock, findSkipAutoRecoveryCatchLines, findNestedChecksumAIBlocks } from './checksumAIAnalyzer';
 import {
@@ -43,19 +41,11 @@ import { loadEnvFile } from '../../config/envLoader';
 const _checksumConfigChecked = new Set<string>();
 
 /**
- * Tracks which workspace roots have already been scanned for colon-in-filename
- * issues this session. The scan runs once per session regardless of how many
- * files are linted.
- */
-const _colonFilenameChecked = new Set<string>();
-
-/**
- * Resets per-session caches (checksum.config.ts check, colon-in-filename scan).
+ * Resets per-session caches (checksum.config.ts check).
  * Call at the start of each lint session.
  */
 export function resetChecksumConfigCache(): void {
   _checksumConfigChecked.clear();
-  _colonFilenameChecked.clear();
 }
 
 /**
@@ -512,41 +502,6 @@ async function detectASTPatterns(
     }
   } catch (error) {
     console.warn('[DeterministicDetector] Failed to check checksum.config.ts env vars:', error);
-  }
-
-  // Repo-wide check: filenames containing ':' break git clone/checkout on Windows.
-  // Runs once per lint session per workspace root. Uses `git ls-files` so we only
-  // flag tracked files (the ones that would actually break a teammate's clone).
-  try {
-    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    if (workspaceRoot && !_colonFilenameChecked.has(workspaceRoot)) {
-      _colonFilenameChecked.add(workspaceRoot);
-
-      const output = execFileSync('git', ['ls-files', '-z'], {
-        cwd: workspaceRoot,
-        encoding: 'utf-8',
-        maxBuffer: 50 * 1024 * 1024, // 50MB — handles very large repos
-      });
-
-      // -z uses NUL as separator so filenames with spaces/special chars are safe
-      const trackedFiles = output.split('\0').filter(Boolean);
-
-      for (const relPath of trackedFiles) {
-        const baseName = path.basename(relPath);
-        if (baseName.includes(':')) {
-          const suggestedName = baseName.replace(/:/g, '-');
-          issues.push({
-            line: 1,
-            message: `[${relPath}] Filename contains ':' which breaks git clone/checkout on Windows. Rename to: ${suggestedName}`,
-            severity: 'error',
-            rule: 'invalid_filename_colon',
-          });
-        }
-      }
-    }
-  } catch (error) {
-    // Silently skip if not a git repo, git not installed, or scan fails.
-    console.warn('[DeterministicDetector] Failed to scan for invalid filenames:', error);
   }
 
   // Spell checking for test descriptions, checksumAI descriptions, and comments

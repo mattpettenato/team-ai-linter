@@ -17,7 +17,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { DiagnosticProvider } from '../diagnostics/diagnosticProvider';
-import { LintIssue, GitIssue, ImportedFileIssue } from '../types';
+import { LintIssue, GitIssue, ImportedFileIssue, WorkspaceIssue } from '../types';
 import { getAnthropicApiKey } from '../config/envLoader';
 import { loadRules, getWorkspaceRoot, getClaudeModel, getMinConfidence } from '../config/configLoader';
 import { isEslintLayerEnabled, isEslintTypeAwareEnabled } from '../config/configLoader';
@@ -27,6 +27,7 @@ import { updateLastLintedTimestampForDocument } from '../services/timestampServi
 import { LintResultStore } from '../services/lintResultStore';
 import { OutputFormatter, setImportedFileDiagnostics } from '../output';
 import { resetChecksumConfigCache } from '../services/detection/deterministicDetector';
+import { detectWorkspaceIssues } from '../services/detection/workspaceIssues';
 
 /**
  * Run all checks (AI lint + git safety) on a document.
@@ -69,6 +70,7 @@ export async function runAllChecks(
       async progress => {
         const lintIssues: LintIssue[] = [];
         const gitIssues: GitIssue[] = [];
+        let workspaceIssues: WorkspaceIssue[] = [];
 
         // Step 1: Git Safety Check
         progress.report({ message: 'Checking imports for git safety...', increment: 0 });
@@ -80,7 +82,7 @@ export async function runAllChecks(
         if (!apiKey) {
           vscode.window.showErrorMessage('ANTHROPIC_API_KEY not found in .env file');
           // Clear loading state before returning
-          panel().updateResultsFromLint(filePath, document.getText(), [], [], []);
+          panel().updateResultsFromLint(filePath, document.getText(), [], [], [], [], []);
           return;
         }
 
@@ -114,6 +116,10 @@ export async function runAllChecks(
         const eslintPromise: Promise<LintIssue[]> = eslintDetector
           ? eslintDetector.lintFile(filePath, document.getText())
           : Promise.resolve([]);
+
+        // Workspace-scoped checks (repo-wide, not attached to any single file).
+        // Runs in parallel with AI + ESLint.
+        const workspaceIssuesPromise = detectWorkspaceIssues(workspaceRoot);
 
         progress.report({ message: 'Running AI lint...', increment: 50 });
         panel().pushStatus({ id: 'ai-lint', text: `Running AI lint on ${fileName}...`, icon: 'spinner' });
@@ -158,6 +164,13 @@ export async function runAllChecks(
           panel().pushStatus({ id: 'eslint', text: 'ESLint failed', icon: 'error', replace: true });
         }
 
+        // Await workspace issues (silent fail returns []; errors already logged)
+        try {
+          workspaceIssues = await workspaceIssuesPromise;
+        } catch (error) {
+          console.error('Workspace issue scan failed:', error);
+        }
+
         progress.report({ message: 'Done!', increment: 50 });
         panel().pushStatus({ id: 'done', text: 'Analysis complete', icon: 'check' });
 
@@ -170,7 +183,7 @@ export async function runAllChecks(
         setImportedFileDiagnostics(diagnosticProvider, importedFileIssues);
 
         // Log detailed results to output channel
-        logResults(formatter, filePath, lintIssues, importedFileIssues, gitIssues, eslintIssues, unresolvedImports, lintedFiles);
+        logResults(formatter, filePath, lintIssues, importedFileIssues, gitIssues, eslintIssues, workspaceIssues, unresolvedImports, lintedFiles);
 
         // Store results for later prompt generation. ESLint issues are
         // merged into the stored lintIssues so prompt generation and
@@ -181,15 +194,18 @@ export async function runAllChecks(
           fileContent: document.getText(),
           lintIssues: storedLintIssues,
           importedIssues: importedFileIssues,
-          gitIssues
+          gitIssues,
+          workspaceIssues
         });
         refreshShowResultsStatusBar();
 
         // Update last linted timestamp in the file
         await updateLastLintedTimestampForDocument(document);
 
-        // Update the webview panel with results
-        panel().updateResultsFromLint(filePath, document.getText(), lintIssues, importedFileIssues, gitIssues, eslintIssues);
+        // Update the webview panel with results. Workspace issues are passed
+        // separately and surface in their own section — they are NOT routed
+        // through diagnosticProvider, so no squiggles appear on the linted file.
+        panel().updateResultsFromLint(filePath, document.getText(), lintIssues, importedFileIssues, gitIssues, eslintIssues, workspaceIssues);
       }
   );
 }
@@ -204,6 +220,7 @@ function logResults(
   importedFileIssues: ImportedFileIssue[],
   gitIssues: GitIssue[],
   eslintIssues: LintIssue[],
+  workspaceIssues: WorkspaceIssue[],
   unresolvedImports: Array<{ moduleSpecifier: string; line: number; fromFile: string }>,
   lintedFiles: string[]
 ): void {
@@ -212,6 +229,7 @@ function logResults(
   formatter.logEslintIssues(filePath, eslintIssues);
   formatter.logImportedFileIssues(importedFileIssues);
   formatter.logGitIssues(filePath, gitIssues);
+  formatter.logWorkspaceIssues(workspaceIssues);
   formatter.logUnresolvedImports(unresolvedImports);
   formatter.logLintedFiles(lintedFiles);
 
@@ -219,7 +237,8 @@ function logResults(
     lintIssues.length === 0 &&
     eslintIssues.length === 0 &&
     importedFileIssues.length === 0 &&
-    gitIssues.length === 0
+    gitIssues.length === 0 &&
+    workspaceIssues.length === 0
   )
     formatter.logNoIssuesFound();
 

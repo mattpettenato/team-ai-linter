@@ -16,7 +16,7 @@
 
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { LintIssue, GitIssue, ImportedFileIssue, Severity } from '../types';
+import { LintIssue, GitIssue, ImportedFileIssue, Severity, WorkspaceIssue } from '../types';
 
 /**
  * Get the icon for a severity level
@@ -166,6 +166,25 @@ export class OutputFormatter {
       const icon = issue.severity === 'error' ? '❌' : '⚠️';
       this.channel.appendLine(`${icon} ${formatFileReference(filePath, issue.importLine)}`);
       this.channel.appendLine(`   [${issue.moduleSpecifier}] ${issue.message}`);
+      this.newLine();
+    }
+  }
+
+  /**
+   * Log workspace-scoped issues (repo-wide, not attached to any single file).
+   */
+  logWorkspaceIssues(issues: WorkspaceIssue[]): void {
+    if (issues.length === 0)
+      return;
+
+    this.newLine();
+    this.channel.appendLine(`🌐 WORKSPACE ISSUES (${issues.length})`);
+    this.separator();
+
+    for (const issue of issues) {
+      const icon = getSeverityIcon(issue.severity);
+      this.channel.appendLine(`${icon} ${issue.offenderPath}`);
+      this.channel.appendLine(`   [${issue.rule}] ${issue.message}`);
       this.newLine();
     }
   }
