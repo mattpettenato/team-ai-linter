@@ -19,23 +19,11 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { LintIssue, GitIssue } from '../diagnostics/diagnosticProvider';
 import { ImportedFileIssue } from '../services/importedFileLinter';
-import { WorkspaceIssue } from '../types';
 import { generatePanelHtml, generateLoadingHtml } from './panelHtml';
 import { getExtensionVersion } from '../services/versionService';
 
 function getCurrentUsername(): string {
   return os.userInfo().username;
-}
-
-function toDisplayWorkspaceIssues(issues: WorkspaceIssue[]): DisplayWorkspaceIssue[] {
-  return issues.map(issue => ({
-    rule: issue.rule,
-    severity: issue.severity,
-    message: issue.message,
-    offenderPath: issue.offenderPath,
-    offenderName: path.basename(issue.offenderPath),
-    suggestedFix: issue.suggestedFix,
-  }));
 }
 
 export interface DisplayIssue {
@@ -68,15 +56,6 @@ export interface MissingFile {
   moduleSpecifier: string;
 }
 
-export interface DisplayWorkspaceIssue {
-  rule: string;
-  severity: 'error' | 'warning' | 'info';
-  message: string;
-  offenderPath: string;
-  offenderName: string;
-  suggestedFix?: string;
-}
-
 export interface PanelData {
   timestamp: Date;
   files: FileResult[];
@@ -87,7 +66,6 @@ export interface PanelData {
   currentUser?: string;
   unstagedFiles?: UnstagedFile[];
   missingFiles?: MissingFile[];
-  workspaceIssues?: DisplayWorkspaceIssue[];
 }
 
 export interface StatusMessage {
@@ -100,7 +78,7 @@ export interface StatusMessage {
 }
 
 interface WebviewMessage {
-  type: 'navigateToLine' | 'copyFixPrompt' | 'rerunLint' | 'ignoreIssue' | 'fixAllIssues' | 'fixSingleIssue' | 'updateIgnoredIssues' | 'copyGitAddCommands' | 'openFile';
+  type: 'navigateToLine' | 'copyFixPrompt' | 'rerunLint' | 'ignoreIssue' | 'fixAllIssues' | 'fixSingleIssue' | 'updateIgnoredIssues' | 'copyGitAddCommands';
   file?: string;
   line?: number;
   rule?: string;
@@ -258,8 +236,7 @@ export class LintResultsPanel {
     lintIssues: LintIssue[],
     importedIssues: ImportedFileIssue[],
     gitIssues: GitIssue[],
-    eslintIssues: LintIssue[] = [],
-    workspaceIssues: WorkspaceIssue[] = []
+    eslintIssues: LintIssue[] = []
   ): void {
     // Merge ESLint issues into the main lint issues array so they flow through
     // the existing display logic. The rule prefix (e.g. `checksum/`,
@@ -367,19 +344,16 @@ export class LintResultsPanel {
         moduleSpecifier: issue.moduleSpecifier,
       }));
 
-    const displayWorkspaceIssues = toDisplayWorkspaceIssues(workspaceIssues);
-
     this.updateResults({
       timestamp: new Date(),
       files: files,
-      totalIssues: allIssues.length + displayWorkspaceIssues.length,
-      errorCount: errorCount + displayWorkspaceIssues.filter(w => w.severity === 'error').length,
-      warningCount: warningCount + displayWorkspaceIssues.filter(w => w.severity === 'warning').length,
-      infoCount: infoCount + displayWorkspaceIssues.filter(w => w.severity === 'info').length,
+      totalIssues: allIssues.length,
+      errorCount,
+      warningCount,
+      infoCount,
       currentUser: getCurrentUsername(),
       unstagedFiles: unstagedFiles.length > 0 ? unstagedFiles : undefined,
       missingFiles: missingFiles.length > 0 ? missingFiles : undefined,
-      workspaceIssues: displayWorkspaceIssues.length > 0 ? displayWorkspaceIssues : undefined,
     });
   }
 
@@ -389,8 +363,7 @@ export class LintResultsPanel {
       lintIssues: LintIssue[];
       importedIssues: ImportedFileIssue[];
       gitIssues?: GitIssue[];
-    }>,
-    workspaceIssues: WorkspaceIssue[] = []
+    }>
   ): void {
     const files: FileResult[] = [];
     const importedByFile = new Map<string, DisplayIssue[]>();
@@ -504,19 +477,16 @@ export class LintResultsPanel {
     const warningCount = allIssues.filter(i => i.severity === 'warning').length;
     const infoCount = allIssues.filter(i => i.severity === 'info').length;
 
-    const displayWorkspaceIssues = toDisplayWorkspaceIssues(workspaceIssues);
-
     this.updateResults({
       timestamp: new Date(),
       files: files,
-      totalIssues: allIssues.length + displayWorkspaceIssues.length,
-      errorCount: errorCount + displayWorkspaceIssues.filter(w => w.severity === 'error').length,
-      warningCount: warningCount + displayWorkspaceIssues.filter(w => w.severity === 'warning').length,
-      infoCount: infoCount + displayWorkspaceIssues.filter(w => w.severity === 'info').length,
+      totalIssues: allIssues.length,
+      errorCount,
+      warningCount,
+      infoCount,
       currentUser: getCurrentUsername(),
       unstagedFiles: allUnstagedFiles.length > 0 ? allUnstagedFiles : undefined,
       missingFiles: allMissingFiles.length > 0 ? allMissingFiles : undefined,
-      workspaceIssues: displayWorkspaceIssues.length > 0 ? displayWorkspaceIssues : undefined,
     });
   }
 
@@ -531,14 +501,6 @@ export class LintResultsPanel {
           const range = new vscode.Range(line, 0, line, 0);
           editor.selection = new vscode.Selection(range.start, range.start);
           editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
-        }
-        break;
-
-      case 'openFile':
-        if (message.file) {
-          const uri = vscode.Uri.file(message.file);
-          const document = await vscode.workspace.openTextDocument(uri);
-          await vscode.window.showTextDocument(document, vscode.ViewColumn.One);
         }
         break;
 

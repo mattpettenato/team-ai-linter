@@ -80,25 +80,6 @@ export interface ImportedFileIssue extends LintIssue {
 }
 
 /**
- * Workspace-scoped issue that isn't tied to any single file being linted.
- * Example: a repo-wide scan finds filenames that break git on Windows.
- * These do NOT create editor diagnostics on the currently-open file — they
- * surface in a dedicated "Workspace Issues" panel section instead.
- */
-export interface WorkspaceIssue {
-  /** Rule identifier (e.g. 'invalid_filename_colon') */
-  rule: string;
-  /** Issue severity */
-  severity: Severity;
-  /** Human-readable description, without a [path] prefix */
-  message: string;
-  /** Absolute path to the offending file */
-  offenderPath: string;
-  /** Optional suggested fix (e.g. proposed rename) */
-  suggestedFix?: string;
-}
-
-/**
  * Unresolved import that couldn't be linted
  */
 export interface UnresolvedImport {
