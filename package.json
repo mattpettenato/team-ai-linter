@@ -2,7 +2,7 @@
   "name": "team-ai-linter",
   "displayName": "Team AI Linter",
   "description": "AI-powered test linting and import-graph git safety checks for Cursor IDE",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "publisher": "checksum",
   "license": "MIT",
   "repository": {
@@ -137,11 +137,12 @@
         },
         "teamAiLinter.model": {
           "type": "string",
-          "default": "claude-sonnet-4-20250514",
+          "default": "claude-sonnet-4-5-20250929",
           "enum": [
-            "claude-sonnet-4-20250514",
-            "claude-opus-4-20250514",
-            "claude-3-5-haiku-20241022"
+            "claude-sonnet-4-5-20250929",
+            "claude-sonnet-4-6",
+            "claude-opus-4-8",
+            "claude-haiku-4-5"
           ],
           "description": "Claude model to use for AI linting"
         },
@@ -188,6 +189,8 @@
     "test:diagnostics": "tsx --import ./test-fixtures/diagnostic-provider/register-loader.mjs ./test-fixtures/diagnostic-provider/test-multi-source.mts",
     "test:regression": "tsx --import ./test-fixtures/regression/register-loader.mjs ./test-fixtures/regression/test-existing-detectors.mts",
     "test:fixtures": "node test-fixtures/eslint-detector/run-tests.mjs",
+    "pretest:e2e": "npm run compile && tsc -p tsconfig.test.json",
+    "test:e2e": "node out/test/runTest.js",
     "test:all": "npm run check-types && npm run test:fixtures && npm run test:detector && npm run test:diagnostics && npm run test:regression && npm run test:vsix"
   },
   "dependencies": {
@@ -202,12 +205,16 @@
   },
   "devDependencies": {
     "@types/eslint": "^9.0.0",
+    "@types/mocha": "^10.0.10",
     "@types/node": "20.x",
     "@types/vscode": "^1.96.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
+    "@vscode/test-electron": "^3.0.0",
     "esbuild": "^0.25.0",
     "eslint": "^9.0.0",
+    "glob": "^13.0.6",
+    "mocha": "^11.7.6",
     "tsx": "^4.21.0",
     "typescript": "^5.7.0"
   }

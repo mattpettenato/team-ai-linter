@@ -50,12 +50,20 @@ const _checksumConfigChecked = new Set<string>();
 const _colonFilenameChecked = new Set<string>();
 
 /**
- * Resets per-session caches (checksum.config.ts check, colon-in-filename scan).
- * Call at the start of each lint session.
+ * Tracks which workspace roots have already been scanned for `.checksum.md`
+ * title/filename and title/spec mismatches this session. Like the colon scan,
+ * this runs once per session regardless of how many files are linted.
+ */
+const _mdTitleChecked = new Set<string>();
+
+/**
+ * Resets per-session caches (checksum.config.ts check, colon-in-filename scan,
+ * .checksum.md title scan). Call at the start of each lint session.
  */
 export function resetChecksumConfigCache(): void {
   _checksumConfigChecked.clear();
   _colonFilenameChecked.clear();
+  _mdTitleChecked.clear();
 }
 
 /**
@@ -549,6 +557,22 @@ async function detectASTPatterns(
     console.warn('[DeterministicDetector] Failed to scan for invalid filenames:', error);
   }
 
+  // Repo-wide check: `.checksum.md` story title must match its filename slug,
+  // and must match the title of its paired `.checksum.spec.ts` (linked by
+  // checksumTestId). A drift between the title shown in the Checksum dashboard
+  // and the on-disk filename/spec makes test cases impossible to locate.
+  // Runs once per workspace root per session, like the colon-filename scan.
+  try {
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (workspaceRoot && !_mdTitleChecked.has(workspaceRoot)) {
+      _mdTitleChecked.add(workspaceRoot);
+      issues.push(...checkChecksumMdTitleMismatches(workspaceRoot));
+    }
+  } catch (error) {
+    // Silently skip if not a git repo, git not installed, or scan fails.
+    console.warn('[DeterministicDetector] Failed to scan .checksum.md titles:', error);
+  }
+
   // Spell checking for test descriptions, checksumAI descriptions, and comments
   try {
     const spellIssues = await spellCheckFile(fileContent);
@@ -566,6 +590,182 @@ async function detectASTPatterns(
   } catch (error) {
     console.warn('[DeterministicDetector] Failed to spell check:', error);
   }
+}
+
+/**
+ * Slugify a string the way Checksum derives `.checksum.md` filenames from
+ * titles: lowercase, collapse every run of non-alphanumeric characters to a
+ * single hyphen, and trim leading/trailing hyphens. Doubles as the canonical
+ * form for comparing two titles (case- and punctuation-insensitive).
+ */
+function slugify(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+/** Escape a string for safe interpolation into a RegExp. */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Common words ignored when comparing a filename against its title. Filenames
+ * routinely drop these connectors (e.g. "does not show" -> "no"), so counting
+ * them would produce false mismatches.
+ */
+const FILENAME_STOP_WORDS = new Set([
+  'the', 'a', 'an', 'and', 'or', 'of', 'for', 'to', 'in', 'on', 'is', 'are',
+  'not', 'no', 'with', 'when', 'does', 'do', 'that', 'this',
+]);
+
+/**
+ * Parse the YAML frontmatter of a `.checksum.md` story file. Checksum stores
+ * the test title and id in frontmatter (not an H1), e.g.
+ *
+ *   ---
+ *   title: Care plans list shows required table columns and row data
+ *   checksumTestId: PWL01
+ *   ---
+ */
+function parseChecksumMdFrontmatter(content: string): { title?: string; testId?: string } {
+  const block = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!block) {
+    return {};
+  }
+  const unquote = (raw?: string): string | undefined =>
+    raw?.trim().replace(/^["']|["']$/g, '').trim() || undefined;
+  return {
+    title: unquote(block[1].match(/^title:\s*(.+?)\s*$/m)?.[1]),
+    testId: unquote(block[1].match(/^checksumTestId:\s*(.+?)\s*$/m)?.[1]),
+  };
+}
+
+/**
+ * Build a map of checksumTestId -> { title, relPath } from every
+ * `.checksum.spec.ts` file. Specs declare their title via
+ * `defineChecksumTest("<title>", "<testId>")`.
+ */
+function buildSpecTitleMap(
+  workspaceRoot: string,
+  specRelPaths: string[],
+): Map<string, { title: string; relPath: string }> {
+  const map = new Map<string, { title: string; relPath: string }>();
+  const re = /defineChecksumTest\s*\(\s*(['"`])([\s\S]*?)\1\s*,\s*(['"`])([\s\S]*?)\3/g;
+  for (const relPath of specRelPaths) {
+    let content: string;
+    try {
+      content = fs.readFileSync(path.join(workspaceRoot, relPath), 'utf-8');
+    } catch {
+      continue;
+    }
+    for (const m of content.matchAll(re)) {
+      const title = m[2].trim();
+      const testId = m[4].trim();
+      if (testId && !map.has(testId)) {
+        map.set(testId, { title, relPath });
+      }
+    }
+  }
+  return map;
+}
+
+/**
+ * Scan all tracked `.checksum.md` story files for two classes of drift:
+ *
+ *   1. filename ↔ title    — the filename slug must match the frontmatter
+ *      title slug. Filenames are truncated, so the filename slug is allowed to
+ *      be a prefix of the title slug. The trailing `-<checksumTestId>` suffix
+ *      is stripped before comparison.
+ *   2. .md title ↔ spec title — when a paired `.checksum.spec.ts` exists (same
+ *      checksumTestId), its `defineChecksumTest` title must match the story
+ *      title. This is the real-world bug that made files unfindable.
+ *
+ * A story with a checksumTestId but no paired spec is reported as a warning.
+ * Issues are attributed to line 1 with a `[relPath]` prefix, matching the
+ * existing repo-wide colon-filename scan.
+ */
+function checkChecksumMdTitleMismatches(workspaceRoot: string): LintIssue[] {
+  const issues: LintIssue[] = [];
+
+  const output = execFileSync('git', ['ls-files', '-z'], {
+    cwd: workspaceRoot,
+    encoding: 'utf-8',
+    maxBuffer: 50 * 1024 * 1024, // 50MB — handles very large repos
+  });
+  const trackedFiles = output.split('\0').filter(Boolean);
+
+  const mdRelPaths = trackedFiles.filter(f => f.endsWith('.checksum.md'));
+  if (mdRelPaths.length === 0) {
+    return issues;
+  }
+  const specRelPaths = trackedFiles.filter(f => f.endsWith('.checksum.spec.ts'));
+  const specByTestId = buildSpecTitleMap(workspaceRoot, specRelPaths);
+
+  for (const relPath of mdRelPaths) {
+    let content: string;
+    try {
+      content = fs.readFileSync(path.join(workspaceRoot, relPath), 'utf-8');
+    } catch {
+      continue;
+    }
+
+    const { title, testId } = parseChecksumMdFrontmatter(content);
+    if (!title) {
+      // No title to validate against — nothing to check.
+      continue;
+    }
+
+    // Check 1: the filename must share enough of the title's words to stay
+    // findable. Real Checksum filenames are abbreviated paraphrases of the
+    // title (not exact slugs) and are often truncated, so an exact/prefix match
+    // produces hundreds of false positives across the customer fleet. Instead
+    // flag only genuine divergence: fewer than half of the filename's
+    // significant words appear in the title. This catches wrong-title renames
+    // and broken/placeholder titles without punishing normal abbreviation.
+    let namePart = path.basename(relPath).replace(/\.checksum\.md$/i, '');
+    if (testId) {
+      namePart = namePart.replace(new RegExp(`[\\s_-]+${escapeRegExp(testId)}$`, 'i'), '');
+    }
+    const titleSlug = slugify(title);
+    const titleWords = new Set(titleSlug.split('-').filter(Boolean));
+    const fileWords = slugify(namePart).split('-').filter(w => w && !FILENAME_STOP_WORDS.has(w));
+    if (fileWords.length > 0) {
+      const overlap = fileWords.filter(w => titleWords.has(w)).length / fileWords.length;
+      if (overlap < 0.5) {
+        issues.push({
+          line: 1,
+          message: `[${relPath}] Filename does not match test title "${title}" — they share almost no words, so the test is hard to find by its title. Rename the file to reflect the title, or correct the frontmatter title.`,
+          severity: 'warning',
+          rule: 'checksum_md_title_filename_mismatch',
+        });
+      }
+    }
+
+    if (!testId) {
+      continue;
+    }
+
+    // Check 2: .md title ↔ paired spec title.
+    const spec = specByTestId.get(testId);
+    if (!spec) {
+      issues.push({
+        line: 1,
+        message: `[${relPath}] Orphaned .checksum.md story (checksumTestId ${testId}): no paired .checksum.spec.ts found. Generate the spec or remove the story.`,
+        severity: 'warning',
+        rule: 'checksum_md_orphaned_story',
+      });
+      continue;
+    }
+    if (slugify(spec.title) !== titleSlug) {
+      issues.push({
+        line: 1,
+        message: `[${relPath}] Test title mismatch: story title "${title}" differs from its paired spec [${spec.relPath}] title "${spec.title}". They share checksumTestId ${testId} and must describe the same test.`,
+        severity: 'error',
+        rule: 'checksum_md_title_spec_mismatch',
+      });
+    }
+  }
+
+  return issues;
 }
 
 /**

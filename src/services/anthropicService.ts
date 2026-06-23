@@ -28,7 +28,7 @@ export class AnthropicService {
   private client: Anthropic;
   private model: string;
 
-  constructor(apiKey: string, model: string = 'claude-sonnet-4-20250514') {
+  constructor(apiKey: string, model: string = 'claude-sonnet-4-5-20250929') {
     this.client = new Anthropic({ apiKey });
     this.model = model;
   }
@@ -44,6 +44,15 @@ export class AnthropicService {
   ): Promise<LintIssue[]> {
     console.log(`[AnthropicService] lintTestFile called for: ${filePath}`);
     console.log(`[AnthropicService] File content length: ${fileContent.length} bytes`);
+
+    // Deterministic + AST detection is an independent layer and must run
+    // regardless of the AI call. A dead model id, an invalid key, or a network
+    // blip should never silently disable the rule-based checks (title/filename
+    // mismatches, colon filenames, env-var guards, etc.).
+    const deterministicIssues = await detectDeterministicPatterns(fileContent, filePath);
+    console.log(`[AnthropicService] Deterministic detection found ${deterministicIssues.length} issues`);
+    if (deterministicIssues.length > 0)
+      console.log(`[AnthropicService] Deterministic issues:`, deterministicIssues.map(i => `Line ${i.line}: [${i.rule}] ${i.message}`));
 
     try {
       // Use structured content blocks with cache_control for optimal caching
@@ -92,21 +101,16 @@ export class AnthropicService {
       const correctedIssues = correctLineNumbers(confidentIssues, fileContent);
       console.log(`[AnthropicService] After line number correction: ${correctedIssues.length} issues`);
 
-      // Add deterministic pattern detection for simple patterns the AI might miss
-      const deterministicIssues = await detectDeterministicPatterns(fileContent, filePath);
-      console.log(`[AnthropicService] Deterministic detection found ${deterministicIssues.length} issues`);
-      if (deterministicIssues.length > 0)
-        console.log(`[AnthropicService] Deterministic issues:`, deterministicIssues.map(i => `Line ${i.line}: [${i.rule}] ${i.message}`));
-
-
       // Merge and deduplicate
       const finalIssues = mergeAndDeduplicateIssues(correctedIssues, deterministicIssues);
       console.log(`[AnthropicService] Final merged result: ${finalIssues.length} issues`);
 
       return finalIssues;
     } catch (error) {
-      console.error('[AnthropicService] Failed to lint with Claude:', error);
-      throw error;
+      // The AI layer failed — surface it for debugging, but still return the
+      // deterministic findings so rule-based diagnostics survive.
+      console.error('[AnthropicService] AI lint failed; returning deterministic results only:', error);
+      return mergeAndDeduplicateIssues([], deterministicIssues);
     }
   }
 

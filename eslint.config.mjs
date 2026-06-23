@@ -19,7 +19,10 @@ export default [
       ecmaVersion: 2020,
       sourceType: "module",
       parserOptions: {
-        project: path.join(__dirname, "tsconfig.json"),
+        project: [
+          path.join(__dirname, "tsconfig.json"),
+          path.join(__dirname, "tsconfig.test.json"),
+        ],
       },
     },
     rules: {
