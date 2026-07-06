@@ -26,7 +26,14 @@ const CONFIG_DEFAULTS = {
 };
 
 const workspace = {
-  workspaceFolders: undefined,
+  // Repo-wide scans (colon filenames, .checksum.md titles) key off the first
+  // workspace folder. Unset (regression tests) -> undefined, scans disabled.
+  // The smoke suite (test-fixtures/smoke) points this at a fixture repo or a
+  // real customer repo via TAL_MOCK_WORKSPACE_ROOT.
+  get workspaceFolders() {
+    const root = process.env.TAL_MOCK_WORKSPACE_ROOT;
+    return root ? [{ uri: { fsPath: root } }] : undefined;
+  },
   getConfiguration(_section) {
     return {
       get(key, fallback) {

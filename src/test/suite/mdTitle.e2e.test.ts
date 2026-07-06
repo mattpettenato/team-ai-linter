@@ -71,6 +71,10 @@ suite('checksum.md title-mismatch rules (E2E)', () => {
       codes.has('checksum_md_title_filename_mismatch'),
       `expected filename warning (AB02). Got: ${all}`,
     );
+    assert.ok(
+      codes.has('unwrapped_action'),
+      `expected unwrapped_action error for raw page.goto. Got: ${all}`,
+    );
   });
 
   test('does not flag the control fixture (AB01)', () => {
@@ -81,5 +85,25 @@ suite('checksum.md title-mismatch rules (E2E)', () => {
     const diags = vscode.languages.getDiagnostics(targetUri);
     const ab01 = diags.filter(d => /AB01/.test(d.message));
     assert.strictEqual(ab01.length, 0, `AB01 should not be flagged; got: ${ab01.map(d => d.message).join(' | ')}`);
+  });
+
+  test('does not flag abbreviated spec titles (AB05)', () => {
+    // AB05's spec title "Enter AP Invoice" abbreviates the story title
+    // "Enter Accounts Payable Invoice (Trust Accountant)" — same test, so the
+    // word-overlap comparison must not report a spec-mismatch.
+    const diags = vscode.languages.getDiagnostics(targetUri);
+    const ab05 = diags.filter(d => /AB05/.test(d.message));
+    assert.strictEqual(ab05.length, 0, `AB05 should not be flagged; got: ${ab05.map(d => d.message).join(' | ')}`);
+  });
+
+  test('does not flag actions wrapped in checksumAI', () => {
+    // target.spec.ts has one wrapped click (line 6) — only the raw goto at
+    // line 4 may carry unwrapped_action.
+    const diags = vscode.languages.getDiagnostics(targetUri);
+    const unwrapped = diags.filter(d => String(d.code) === 'unwrapped_action');
+    assert.ok(
+      unwrapped.every(d => d.range.start.line === 3), // 0-indexed line 4
+      `unwrapped_action should only hit the raw goto; got lines: ${unwrapped.map(d => d.range.start.line + 1).join(', ')}`,
+    );
   });
 });

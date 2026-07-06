@@ -19,7 +19,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { execFileSync } from 'child_process';
 import { LintIssue, Severity } from '../../types';
-import { findChecksumAIBlocksWithDescription, isLineInChecksumAIBlock, findSkipAutoRecoveryCatchLines, findNestedChecksumAIBlocks } from './checksumAIAnalyzer';
+import { findChecksumAIBlocks, findChecksumAIBlocksWithDescription, isLineInChecksumAIBlock, findSkipAutoRecoveryCatchLines, findNestedChecksumAIBlocks } from './checksumAIAnalyzer';
 import {
   findUnusedImports,
   findUnusedParameters,
@@ -311,6 +311,32 @@ export async function detectDeterministicPatterns(fileContent: string, filePath:
           rule,
         });
       }
+    }
+  }
+
+  // Checksum-spec-only: Playwright actions must be wrapped in checksumAI so the
+  // step shows in traces and the AI agent can recover it. The AI-reported
+  // version of this is filtered as unreliable (responseParser), so it must be
+  // caught deterministically here.
+  if (!isUtilityFile && /defineChecksumTest|@checksum-ai\/runtime/.test(fileContent)) {
+    const allChecksumAIBlocks = findChecksumAIBlocks(lines);
+    const unwrappedActionPattern = /^\s*await\s+(?!checksumAI\b)\S.*\.(?:click|dblclick|fill|type|press|clear|hover|focus|blur|check|uncheck|selectOption|setInputFiles|tap|dragTo|goto|reload)\s*\(/;
+    for (let i = 0; i < lines.length; i++) {
+      if (isCommentLine(lines[i]))
+        continue;
+
+      if (!unwrappedActionPattern.test(lines[i]))
+        continue;
+
+      if (isLineInChecksumAIBlock(i + 1, allChecksumAIBlocks))
+        continue;
+
+      issues.push({
+        line: i + 1,
+        message: 'Playwright action is not wrapped in checksumAI. Wrap it so the step appears in traces and the AI agent can recover it: await checksumAI("Action X to accomplish Y", async () => { ... })',
+        severity: 'error',
+        rule: 'unwrapped_action',
+      });
     }
   }
 
@@ -618,6 +644,31 @@ const FILENAME_STOP_WORDS = new Set([
 ]);
 
 /**
+ * Fraction of significant words the shorter title shares with the longer one.
+ * Story and spec titles routinely abbreviate each other ("Enter AP Invoice" vs
+ * "Enter Accounts Payable Invoice (Trust Accountant)"), so exact slug equality
+ * flags nearly every legitimate pair. Real drift (the Medicillio bug) shares
+ * almost no words, so a 50% overlap threshold separates the two.
+ */
+function titleOverlap(a: string, b: string): number {
+  const words = (t: string) =>
+    new Set(slugify(t).split('-').filter(w => w && !FILENAME_STOP_WORDS.has(w)));
+  const wordsA = words(a);
+  const wordsB = words(b);
+  if (wordsA.size === 0 || wordsB.size === 0) {
+    return 1;
+  }
+  const [small, large] = wordsA.size <= wordsB.size ? [wordsA, wordsB] : [wordsB, wordsA];
+  let shared = 0;
+  for (const w of small) {
+    if (large.has(w)) {
+      shared++;
+    }
+  }
+  return shared / small.size;
+}
+
+/**
  * Parse the YAML frontmatter of a `.checksum.md` story file. Checksum stores
  * the test title and id in frontmatter (not an H1), e.g.
  *
@@ -755,7 +806,7 @@ function checkChecksumMdTitleMismatches(workspaceRoot: string): LintIssue[] {
       });
       continue;
     }
-    if (slugify(spec.title) !== titleSlug) {
+    if (titleOverlap(spec.title, title) < 0.5) {
       issues.push({
         line: 1,
         message: `[${relPath}] Test title mismatch: story title "${title}" differs from its paired spec [${spec.relPath}] title "${spec.title}". They share checksumTestId ${testId} and must describe the same test.`,

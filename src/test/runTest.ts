@@ -53,6 +53,7 @@ function write(root: string, relPath: string, content: string): void {
  *   AB02 — filename shares no words with title           -> filename warning
  *   AB03 — story title differs from paired spec title    -> spec-mismatch error
  *   AB04 — story has a testId but no paired spec          -> orphan warning
+ *   AB05 — spec title abbreviates the story title          -> NO issue (control)
  */
 function buildWorkspace(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tal-e2e-'));
@@ -75,16 +76,29 @@ function buildWorkspace(): string {
   write(root, 'checksum/tests/dashboard/Sidebar - AB03.checksum.spec.ts',
     'import { defineChecksumTest } from "checksumai";\ndefineChecksumTest("Sidebar collapses on mobile viewport", "AB03");\n');
 
+  // Abbreviation control: spec title is a shortened form of the story title
+  // (persona suffix + abbreviated words). Must NOT flag — real customer specs
+  // abbreviate like this everywhere.
+  write(root, 'checksum/tests/invoices/enter-ap-invoice-AB05.checksum.md',
+    '---\ntitle: Enter Accounts Payable Invoice (Trust Accountant)\nchecksumTestId: AB05\n---\n\nStory body.\n');
+  write(root, 'checksum/tests/invoices/Enter AP Invoice - AB05.checksum.spec.ts',
+    'import { defineChecksumTest } from "checksumai";\ndefineChecksumTest("Enter AP Invoice", "AB05");\n');
+
   // Orphan: story with a testId but no paired spec.
   write(root, 'checksum/tests/reports/report-export-to-pdf-AB04.checksum.md',
     '---\ntitle: Report export to pdf\nchecksumTestId: AB04\n---\n\nStory body.\n');
 
   // The file the linter is actually invoked on. The .checksum.md scan is
   // repo-wide and runs regardless of which file is linted.
+  // A checksum-flavored spec so the unwrapped_action rule is active: the raw
+  // page.goto must be flagged, the wrapped click must not.
   write(root, 'checksum/tests/target.spec.ts',
-    'import { test, expect } from "@playwright/test";\n\n' +
+    'import { test, expect, checksumAI, defineChecksumTest } from "@checksum-ai/runtime";\n\n' +
     'test("loads the home page", async ({ page }) => {\n' +
     '  await page.goto("https://example.com");\n' +
+    '  await checksumAI("Click login button to open the login form", async () => {\n' +
+    '    await page.getByRole("button", { name: "Login" }).click();\n' +
+    '  });\n' +
     '  await expect(page.getByRole("heading")).toBeVisible();\n' +
     '});\n');
 
