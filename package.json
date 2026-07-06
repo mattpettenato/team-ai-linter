@@ -2,7 +2,7 @@
   "name": "team-ai-linter",
   "displayName": "Team AI Linter",
   "description": "AI-powered test linting and import-graph git safety checks for Cursor IDE",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "publisher": "checksum",
   "license": "MIT",
   "repository": {
@@ -188,10 +188,11 @@
     "test:vsix": "node test-fixtures/vsix/test-vsix-integrity.mjs",
     "test:diagnostics": "tsx --import ./test-fixtures/diagnostic-provider/register-loader.mjs ./test-fixtures/diagnostic-provider/test-multi-source.mts",
     "test:regression": "tsx --import ./test-fixtures/regression/register-loader.mjs ./test-fixtures/regression/test-existing-detectors.mts",
+    "test:smoke": "tsx --import ./test-fixtures/regression/register-loader.mjs ./test-fixtures/smoke/test-smoke.mts",
     "test:fixtures": "node test-fixtures/eslint-detector/run-tests.mjs",
     "pretest:e2e": "npm run compile && tsc -p tsconfig.test.json",
     "test:e2e": "node out/test/runTest.js",
-    "test:all": "npm run check-types && npm run test:fixtures && npm run test:detector && npm run test:diagnostics && npm run test:regression && npm run test:vsix"
+    "test:all": "npm run check-types && npm run test:fixtures && npm run test:detector && npm run test:diagnostics && npm run test:regression && npm run test:smoke && npm run test:vsix"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
