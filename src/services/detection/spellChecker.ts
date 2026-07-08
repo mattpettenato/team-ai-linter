@@ -63,6 +63,15 @@ const CUSTOM_DICTIONARY = [
   // Additional Checksum-specific terms
   'variablestore', 'variablesstore', 'testdata', 'pageobject', 'pageobjects',
   'datafactory', 'testfixture', 'testfixtures', 'specfile', 'specfiles',
+  // Moderation / forum domain terms (real words missing from cspell's dictionary)
+  'unmoderated', 'moderations', 'remoderate', 'unpublish', 'unpublished',
+  'unpin', 'unpinned', 'unflag', 'unflagged', 'upvote', 'upvotes', 'downvote',
+  'downvotes', 'subforum', 'subforums',
+  // File extensions / schema terms seen in comments
+  'graphqls', 'tsx', 'jsx', 'vsix', 'proto', 'yml', 'toml',
+  // Common customer-stack terms
+  'opname', 'lia', 'khoros', 'akismet', 'prefill', 'prefilled', 'subtask',
+  'subtasks', 'unarchive', 'unarchived',
 ];
 
 // Convert custom dictionary to a Set for O(1) lookup

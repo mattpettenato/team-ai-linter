@@ -268,6 +268,30 @@ export function isCommentLine(line: string): boolean {
 }
 
 /**
+ * Matches the nearest enclosing function/method definition line and captures
+ * its name. Covers declarations, class methods, and const-assigned arrows.
+ */
+const FUNCTION_DEF_PATTERN = /(?:function\s+([A-Za-z_$][\w$]*)|(?:private|public|protected|static)\s+(?:static\s+)?(?:async\s+)?([A-Za-z_$][\w$]*)\s*[<(]|const\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?[(<]|async\s+([A-Za-z_$][\w$]*)\s*[<(])/;
+
+/**
+ * True when the line at `index` sits inside a retry/backoff helper — the
+ * nearest function definition above it has retry/backoff in its name.
+ * Backoff sleeps between retry attempts are legitimate; polling advice
+ * doesn't apply to them.
+ */
+export function isInsideRetryOrBackoffHelper(lines: string[], index: number): boolean {
+  const lookback = Math.max(0, index - 40);
+  for (let i = index; i >= lookback; i--) {
+    const match = lines[i].match(FUNCTION_DEF_PATTERN);
+    if (match) {
+      const name = match[1] || match[2] || match[3] || match[4] || '';
+      return /retry|backoff/i.test(name);
+    }
+  }
+  return false;
+}
+
+/**
  * Detect simple patterns deterministically using regex.
  * This supplements AI detection for patterns it might miss.
  */
@@ -319,6 +343,13 @@ export async function detectDeterministicPatterns(fileContent: string, filePath:
         if (rule === 'undescribed_page_evaluate' &&
             (isLineInChecksumAIBlock(lineNumber, checksumAIBlocksWithDescription) ||
              isLineInChecksumAIBlock(lineNumber, describedTestStepBlocks)))
+          continue;
+
+        // Backoff sleeps inside retry helpers are legitimate — there is no
+        // condition to poll for between attempts
+        if (rule === 'avoid_waitForTimeout' &&
+            message.startsWith('Hand-rolled sleep') &&
+            isInsideRetryOrBackoffHelper(lines, i))
           continue;
 
         // Skip silent_fallback for empty catch blocks in skipAutoRecovery contexts
@@ -785,6 +816,13 @@ function checkChecksumMdTitleMismatches(workspaceRoot: string): LintIssue[] {
     const { title, testId } = parseChecksumMdFrontmatter(content);
     if (!title) {
       // No title to validate against — nothing to check.
+      continue;
+    }
+
+    // Bundled starter templates are not real stories: anything under an
+    // examples/ directory, or a story still carrying the TSTID placeholder
+    // ("Replace checksumTestId with a value from your Checksum app").
+    if (/(^|\/)examples\//i.test(relPath) || testId === 'TSTID') {
       continue;
     }
 

@@ -88,6 +88,18 @@ CRITICAL INSTRUCTIONS:
    the agent reads the description to understand what needs to happen and dynamically solve the failure.
    Good descriptions help the AI agent recover from failures.
 
+   CRITICAL — WHAT COUNTS AS A checksumAI WRAPPER:
+   Only a literal invocation of the form: await checksumAI("description", async () => { ... })
+   NEVER flag or evaluate any of these (they are NOT wrappers):
+   - Function parameter declarations or type annotations (e.g. "checksumAI: ChecksumAI" in a signature)
+   - Call sites that PASS checksumAI into a helper function
+     (e.g. navigateForApiContext(page, checksumAI, "populate auth context for setup"))
+     The helper wraps checksumAI internally; the string you see is a fragment interpolated into a
+     larger runtime description you cannot see, so judging it in isolation produces false positives.
+   - Imports, exports, or any other mention of the checksumAI identifier
+   If the line does not literally begin a checksumAI("...") call, do NOT report any
+   vague_checksumAI_description or misleading_checksumAI_description issue for it.
+
    FLAG these issues:
 
    a) ACTION TYPE MISMATCHES (rule: "misleading_checksumAI_description", severity: warning):
