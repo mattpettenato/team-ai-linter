@@ -19,7 +19,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { execFileSync } from 'child_process';
 import { LintIssue, Severity } from '../../types';
-import { findChecksumAIBlocks, findChecksumAIBlocksWithDescription, isLineInChecksumAIBlock, findSkipAutoRecoveryCatchLines, findNestedChecksumAIBlocks } from './checksumAIAnalyzer';
+import { findChecksumAIBlocks, findChecksumAIBlocksWithDescription, isLineInChecksumAIBlock, findSkipAutoRecoveryCatchLines, findNestedChecksumAIBlocks, findDescribedTestStepBlocks } from './checksumAIAnalyzer';
 import {
   findUnusedImports,
   findUnusedParameters,
@@ -84,6 +84,18 @@ export const DETERMINISTIC_PATTERNS: DeterministicPattern[] = [
     pattern: /\.waitForTimeout\s*\(/g,
     rule: 'avoid_waitForTimeout',
     message: 'Consider using web-first assertions instead of waitForTimeout for better reliability',
+    severity: 'warning',
+  },
+  {
+    pattern: /new\s+Promise\s*\(\s*(?:\(\s*[\w$]+\s*\)|[\w$]+)\s*=>\s*setTimeout\s*\(/g,
+    rule: 'avoid_waitForTimeout',
+    message: 'Hand-rolled sleep (new Promise(resolve => setTimeout(...))) is waitForTimeout in disguise. Use web-first assertions or poll for the actual condition instead.',
+    severity: 'warning',
+  },
+  {
+    pattern: /\b(?:page|incognitoPage)\s*\.\s*evaluate(?:Handle)?\s*\(/g,
+    rule: 'undescribed_page_evaluate',
+    message: 'page.evaluate() appears as an anonymous "Evaluate" step in Playwright traces, so failures here are unreadable without the codebase. Wrap it in test.step("<operation name>", ...) or a described checksumAI block.',
     severity: 'warning',
   },
   {
@@ -269,6 +281,10 @@ export async function detectDeterministicPatterns(fileContent: string, filePath:
   // Find checksumAI blocks with descriptions for waitForTimeout exception
   const checksumAIBlocksWithDescription = findChecksumAIBlocksWithDescription(lines);
 
+  // Described test.step blocks name themselves in the trace, so evaluate calls
+  // inside them are not anonymous
+  const describedTestStepBlocks = findDescribedTestStepBlocks(lines);
+
   // Find catch lines that belong to skipAutoRecovery try blocks
   // Empty catches are intentional in these contexts - they check for optional state
   const skipAutoRecoveryCatchLines = findSkipAutoRecoveryCatchLines(lines);
@@ -296,6 +312,13 @@ export async function detectDeterministicPatterns(fileContent: string, filePath:
         // Skip certain rules if inside a checksumAI block with a description
         if (SKIP_IN_CHECKSUMAI_RULES.has(rule) &&
             isLineInChecksumAIBlock(lineNumber, checksumAIBlocksWithDescription))
+          continue;
+
+        // page.evaluate is only a trace-readability problem when the step is
+        // anonymous — a described checksumAI or test.step wrapper names it
+        if (rule === 'undescribed_page_evaluate' &&
+            (isLineInChecksumAIBlock(lineNumber, checksumAIBlocksWithDescription) ||
+             isLineInChecksumAIBlock(lineNumber, describedTestStepBlocks)))
           continue;
 
         // Skip silent_fallback for empty catch blocks in skipAutoRecovery contexts

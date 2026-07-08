@@ -218,6 +218,20 @@ function renderEmptyState(): string {
   `;
 }
 
+/**
+ * Neutral placeholder when the panel has no lint results yet (e.g. panel was
+ * recreated mid-run). Must NOT imply success — a run may still be in progress.
+ */
+function renderNoResultsState(): string {
+  return `
+    <div class="empty-state">
+      <div class="empty-icon pending">&#x231B;</div>
+      <div class="empty-title">No Results Yet</div>
+      <div class="empty-subtitle">Results will appear here when analysis completes</div>
+    </div>
+  `;
+}
+
 function renderSummary(data: PanelData): string {
   if (data.totalIssues === 0)
     return '<div class="summary success">No issues found</div>';
@@ -766,7 +780,9 @@ export function generatePanelHtml(data: PanelData | undefined, version: string):
   const filterHtml = renderFilterButtons(data);
 
   let contentHtml = '';
-  if (!data || data.files.length === 0) {
+  if (!data) {
+    contentHtml = renderNoResultsState();
+  } else if (data.files.length === 0) {
     contentHtml = renderEmptyState();
   } else {
     // Show all files - those with issues first, then clean files
@@ -1302,6 +1318,10 @@ export function generatePanelHtml(data: PanelData | undefined, version: string):
       font-size: 48px;
       color: var(--vscode-testing-iconPassed, #73c991);
       margin-bottom: 16px;
+    }
+
+    .empty-icon.pending {
+      color: var(--vscode-descriptionForeground);
     }
 
     .empty-title {

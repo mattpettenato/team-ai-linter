@@ -159,6 +159,33 @@ export function findChecksumAIBlocks(lines: string[], options: FindBlocksOptions
 }
 
 /**
+ * Pattern for a test.step call. test.step always takes a title as its first
+ * argument (literal or expression), so every block names itself in the trace.
+ */
+const TEST_STEP_CALL_PATTERN = /\btest\.step\s*\(/;
+
+/**
+ * Find all test.step blocks.
+ * Returns an array of { start, end } line number ranges (1-indexed).
+ * Used to suppress trace-readability rules (e.g. undescribed_page_evaluate)
+ * inside steps that already name themselves in the trace.
+ */
+export function findDescribedTestStepBlocks(lines: string[]): ChecksumAIBlockRange[] {
+  const results: ChecksumAIBlockRange[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    if (TEST_STEP_CALL_PATTERN.test(lines[i])) {
+      const { endIndex } = parseChecksumAIBlock(lines, i);
+      results.push({ start: i + 1, end: endIndex + 1 });
+      i = endIndex + 1;
+    } else {
+      i++;
+    }
+  }
+  return results;
+}
+
+/**
  * Find all checksumAI blocks that contain assertions (expect calls).
  * Returns the line numbers where these checksumAI calls start.
  */
