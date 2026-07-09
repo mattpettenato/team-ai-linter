@@ -124,7 +124,7 @@ export function rulesFileExists(workspaceRoot: string): boolean {
  */
 export function getClaudeModel(): string {
   const config = vscode.workspace.getConfiguration('teamAiLinter');
-  return config.get<string>('model') || 'claude-sonnet-4-5-20250929';
+  return config.get<string>('model') || 'claude-sonnet-4-6';
 }
 
 /**

@@ -137,7 +137,7 @@
         },
         "teamAiLinter.model": {
           "type": "string",
-          "default": "claude-sonnet-4-5-20250929",
+          "default": "claude-sonnet-4-6",
           "enum": [
             "claude-sonnet-4-5-20250929",
             "claude-sonnet-4-6",

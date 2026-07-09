@@ -110,7 +110,7 @@ function buildWorkspace(): string {
     'teamAiLinter.enableEslint': false,
     // A current, valid model so the AI layer succeeds and the full pipeline
     // (AI + deterministic) is exercised. The shipped default is stale.
-    'teamAiLinter.model': process.env.TAL_E2E_MODEL || 'claude-sonnet-4-5-20250929',
+    'teamAiLinter.model': process.env.TAL_E2E_MODEL || 'claude-sonnet-4-6',
   }, null, 2));
 
   // Commit everything so `git ls-files` sees the fixtures.
