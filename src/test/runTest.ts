@@ -27,14 +27,11 @@ import { runTests } from '@vscode/test-electron';
  * all three rules, then launches a real VS Code instance, loads the bundled
  * extension, runs `teamAiLinter.runAll`, and asserts the diagnostics appear.
  *
- * Requires a working ANTHROPIC_API_KEY in the environment: the deterministic
- * scan only runs after a successful Claude API call, so the full pipeline must
- * actually reach the model. Run with:
+ * Runs fully offline: AI layer fails fast (refused port), deterministic layer
+ * still executes. No ANTHROPIC_API_KEY needed. Run with:
  *
- *   ANTHROPIC_API_KEY=sk-... npm run test:e2e
+ *   npm run test:e2e
  */
-
-const apiKey = process.env.ANTHROPIC_API_KEY;
 
 /** Write a file, creating parent directories as needed. */
 function write(root: string, relPath: string, content: string): void {
@@ -102,8 +99,9 @@ function buildWorkspace(): string {
     '  await expect(page.getByRole("heading")).toBeVisible();\n' +
     '});\n');
 
-  // Point the extension at a local .env carrying the key.
-  write(root, '.env', `ANTHROPIC_API_KEY=${apiKey}\n`);
+  // envLoader reads the key from this file (not process.env) and requires
+  // >= 10 chars. The value is fake: the AI call is pointed at a refused port.
+  write(root, '.env', 'ANTHROPIC_API_KEY=sk-ant-test-dummy-key\n');
   write(root, '.vscode/settings.json', JSON.stringify({
     'teamAiLinter.envFilePath': path.join(root, '.env'),
     'teamAiLinter.autoUpdate': false,
@@ -125,14 +123,6 @@ function buildWorkspace(): string {
 }
 
 async function main(): Promise<void> {
-  if (!apiKey) {
-    console.error(
-      '\nANTHROPIC_API_KEY is not set. The deterministic .checksum.md scan only ' +
-      'runs after a successful Claude API call, so this E2E needs a real key.\n' +
-      'Run:  ANTHROPIC_API_KEY=sk-... npm run test:e2e\n');
-    process.exit(1);
-  }
-
   const extensionDevelopmentPath = path.resolve(__dirname, '../../');
   const extensionTestsPath = path.resolve(__dirname, './suite/index');
   const workspace = buildWorkspace();
@@ -143,6 +133,9 @@ async function main(): Promise<void> {
       extensionDevelopmentPath,
       extensionTestsPath,
       launchArgs: [workspace, '--disable-extensions'],
+      // Closed localhost port -> instant ECONNREFUSED in the SDK. Read by the
+      // Anthropic client constructor inside the extension host process.
+      extensionTestsEnv: { ANTHROPIC_BASE_URL: 'http://127.0.0.1:1' },
     });
   } catch (err) {
     console.error('[e2e] tests failed:', err);
