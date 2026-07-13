@@ -20,6 +20,7 @@ import { AnthropicService } from './anthropicService';
 import { parseImportsFromContent, getLocalImports } from './importParser';
 import {
   ImportedFileIssue,
+  LintIssue,
   LintWithImportsResult,
   UnresolvedImport
 } from '../types';
@@ -35,6 +36,12 @@ export class ImportedFileLinter {
   private anthropicService: AnthropicService;
   private lintedFiles: Set<string> = new Set();
   private unresolvedImports: UnresolvedImport[] = [];
+  // Per-instance cache of raw lint results for imported files. A linter
+  // instance lives for one command run (single file OR whole folder), so in a
+  // folder lint shared helpers (utils.ts, page objects) are linted once
+  // instead of once per test file — previously 53 tests × ~7 shared imports
+  // meant ~400 serial AI calls where ~65 unique files existed.
+  private resultCache: Map<string, LintIssue[]> = new Map();
 
   constructor(workspaceRoot: string, anthropicService: AnthropicService) {
     this.pathResolver = new PathResolver(workspaceRoot);
@@ -156,10 +163,16 @@ export class ImportedFileLinter {
     try {
       const content = fs.readFileSync(importedFilePath, 'utf-8');
       console.log(`[ImportedFileLinter] Read file: ${path.basename(importedFilePath)} (${content.length} bytes)`);
-      console.log(`[ImportedFileLinter] Calling anthropicService.lintTestFile for: ${path.basename(importedFilePath)}`);
 
-      const issues = await this.anthropicService.lintTestFile(content, importedFilePath, rules, minConfidence);
-      console.log(`[ImportedFileLinter] anthropicService returned ${issues.length} issues for ${path.basename(importedFilePath)}`);
+      let issues = this.resultCache.get(absolutePath);
+      if (issues) {
+        console.log(`[ImportedFileLinter] Cache hit, reusing ${issues.length} issues for: ${path.basename(importedFilePath)}`);
+      } else {
+        console.log(`[ImportedFileLinter] Calling anthropicService.lintTestFile for: ${path.basename(importedFilePath)}`);
+        issues = await this.anthropicService.lintTestFile(content, importedFilePath, rules, minConfidence);
+        this.resultCache.set(absolutePath, issues);
+      }
+      console.log(`[ImportedFileLinter] ${issues.length} issues for ${path.basename(importedFilePath)}`);
 
       if (issues.length > 0)
         console.log(`[ImportedFileLinter] Issues found:`, issues.map(i => `Line ${i.line}: [${i.rule}] ${i.message}`));

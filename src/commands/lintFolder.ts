@@ -127,6 +127,7 @@ export async function lintSelectedFiles(
           });
 
           panel().pushStatus({ id: `file-${i}`, text: `Processing ${fileName} (${i + 1}/${fileUris.length})...`, icon: 'spinner' });
+          const fileStart = Date.now();
 
           try {
             const content = fs.readFileSync(filePath, 'utf-8');
@@ -171,7 +172,7 @@ export async function lintSelectedFiles(
             });
 
             const issueCount = combinedMainIssues.length + importedIssues.length + gitIssues.length;
-            panel().pushStatus({ id: `file-${i}`, text: `${fileName}: ${issueCount} issue${issueCount !== 1 ? 's' : ''}`, icon: issueCount > 0 ? 'info' : 'check', replace: true });
+            panel().pushStatus({ id: `file-${i}`, text: `${fileName}: ${issueCount} issue${issueCount !== 1 ? 's' : ''} (${((Date.now() - fileStart) / 1000).toFixed(1)}s)`, icon: issueCount > 0 ? 'info' : 'check', replace: true });
 
             // Log issues for this file
             formatter.logFileIssuesCompact(filePath, combinedMainIssues, importedIssues, gitIssues);
@@ -331,6 +332,7 @@ export async function lintFolder(
           });
 
           panel().pushStatus({ id: `file-${i}`, text: `Processing ${fileName} (${i + 1}/${testFiles.length})...`, icon: 'spinner' });
+          const fileStart = Date.now();
 
           try {
             const content = fs.readFileSync(filePath, 'utf-8');
@@ -376,7 +378,7 @@ export async function lintFolder(
             });
 
             const issueCount = combinedMainIssues.length + importedIssues.length + gitIssues.length;
-            panel().pushStatus({ id: `file-${i}`, text: `${fileName}: ${issueCount} issue${issueCount !== 1 ? 's' : ''}`, icon: issueCount > 0 ? 'info' : 'check', replace: true });
+            panel().pushStatus({ id: `file-${i}`, text: `${fileName}: ${issueCount} issue${issueCount !== 1 ? 's' : ''} (${((Date.now() - fileStart) / 1000).toFixed(1)}s)`, icon: issueCount > 0 ? 'info' : 'check', replace: true });
 
             // Log issues for this file (compact format)
             formatter.logFileIssuesCompact(filePath, combinedMainIssues, importedIssues, gitIssues);
