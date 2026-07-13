@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-08
 **Linear:** [PE-271](https://linear.app/checksum-ai/issue/PE-271/create-full-testing-suite-for-ai-linter-to-catch-bugs-before-every) (CE tracking: CE-8901)
-**Status:** Approved (user + two 10-model Senate review rounds)
+**Status:** Approved (user + three 10-model Senate review rounds)
 
 ## Problem
 
@@ -21,7 +21,7 @@ Keep the tsx + mock-vscode pattern — no runner migration (mocha/vitest port is
 
 - `.checksum.md` rules (title↔filename, title↔spec, orphaned story)
 - Spell checker (`spellChecker.ts`)
-- Git safety checker (`gitSafetyChecker.ts`) — fixtures must create **hermetic temp git repos** (`git init` in a temp dir, scripted commits/dirty state); this is the highest-setup-cost suite, scope it accordingly
+- Git safety checker (`gitSafetyChecker.ts`) — fixtures must create **hermetic temp git repos** (`git init` in a temp dir, scripted commits/dirty state), each setting local `user.name`/`user.email` before the first commit — CI runners have no global git identity and `git commit` fails without it; this is the highest-setup-cost suite, scope it accordingly
 - AST detector (`astDetector.ts`)
 
 **P0 regression test (bug #2):** a fixture test that runs the `runAllChecks` orchestration with an `AnthropicService` that throws, and asserts deterministic + AST issues are still produced.
@@ -46,10 +46,10 @@ Keep the tsx + mock-vscode pattern — no runner migration (mocha/vitest port is
 
 Zero network; catches default/enum drift in the diff that introduces it.
 
-**Live check (`test-fixtures/model-guard/check-models.mjs`):** reads the default + enum from `package.json`, calls Anthropic `GET /v1/models` with `ANTHROPIC_API_KEY`, and fails if any configured id is absent.
+**Live check (`test-fixtures/model-guard/check-models.mjs`):** reads the default + enum from `package.json` and probes each configured id with `GET /v1/models/{id}` using `ANTHROPIC_API_KEY`.
 
-- **Pagination:** the endpoint paginates (default `limit` 20, `has_more`/`last_id`). The script MUST page until `has_more: false` before declaring an id missing.
-- **Failure taxonomy:** configured id absent from full list → **fail (stale model)**. HTTP 401/403 → **fail (bad key — infra error, distinct message)**. Transient network/5xx/429 → brief retry (3 attempts, backoff), then **fail (infra error, distinct message)**. Never conflate infra errors with staleness.
+- **Per-id probe, not list-membership.** The settings enum contains shorthand/alias ids (e.g. the current default `claude-sonnet-4-6`) that resolve fine on API calls but are not returned verbatim by the `/v1/models` list (which returns dated canonical ids) — list-membership would fail a working model. The retrieve endpoint resolves aliases and sidesteps pagination entirely.
+- **Failure taxonomy per probe:** HTTP 404 → **fail (stale model)**. HTTP 401/403 → **fail (bad key — infra error, distinct message)**. Transient network/5xx/429 → brief retry (3 attempts, backoff), then **fail (infra error, distinct message)**. Never conflate infra errors with staleness.
 - **Strict mode is workflow plumbing, not script inference.** The script takes `--strict` (or `MODEL_GUARD_STRICT=1`). Non-strict + no key → exit 0 with a `::warning::` annotation (fork PRs). Strict + no key → **fail**. The script never guesses its context from `github.event_name` — inside a reusable workflow that is `workflow_call` and useless.
 
 **Cadence:** model staleness is time-based, not code-based. In addition to PR/release runs, a nightly scheduled run on `main` executes the live guard in strict mode. The nightly job carries an `if: failure()` step that **opens/updates a GitHub issue** — a red X on a cron nobody watches is not "caught within 24h". Note: internal (non-fork) PRs get secrets, so a model retirement will also red-out unrelated PRs until fixed; that is accepted and is exactly the loudness we want.
@@ -66,8 +66,8 @@ Same mocha + `@vscode/test-electron` harness (`src/test/`). New suites beyond `m
 **AI-failure plumbing (verified, not assumed):** `@anthropic-ai/sdk` (installed version) reads `ANTHROPIC_BASE_URL` in its constructor via `readEnv`, and `anthropicService.ts` constructs `new Anthropic({ apiKey })` with no `baseURL` override — so the env var wins with **zero product-code change** (verified against `node_modules` source on 2026-07-08; re-verify if the SDK is upgraded).
 
 - Point `ANTHROPIC_BASE_URL` at a **closed localhost port** → instant `ECONNREFUSED`. Never use an unroutable IP: TCP black hole × SDK default timeout × 2 retries = a hung test.
-- Inject a **dummy `ANTHROPIC_API_KEY`** (e.g. `sk-ant-test-dummy`) so key-loading paths don't bail before reaching the network layer.
-- Both env vars must be set on the **extension-host launch** (the `extensionTestsEnv` option of `runTests()` from `@vscode/test-electron`), not merely the runner process.
+- `ANTHROPIC_BASE_URL` must be set on the **extension-host launch** (the `extensionTestsEnv` option of `runTests()` from `@vscode/test-electron`), not merely the runner process.
+- **The API key does NOT come from `process.env`** — `envLoader.ts` reads `ANTHROPIC_API_KEY` from a `.env` file at the `teamAiLinter.envFilePath` setting and validates it (≥10 chars). The E2E harness must write a dummy `.env` (e.g. `ANTHROPIC_API_KEY=sk-ant-test-dummy-key`) into the fixture workspace and set `teamAiLinter.envFilePath` in the workspace settings, or the lint flow aborts on "missing key" before ever reaching the network layer.
 - **No mock HTTP server.** Every listed suite asserts deterministic/AST behavior only; the refused connection covers all of them. Build an Anthropic-shaped mock only when a future test actually needs a successful AI response.
 
 **CI mechanics:** the e2e job builds first (`pretest:e2e` already compiles), and caches the VS Code download (`~/.vscode-test`) keyed on the VS Code version to cut flake and time.
@@ -90,7 +90,7 @@ on:
 Jobs (all on `ubuntu-24.04` — `ubuntu-latest` rolls forward and isn't a pin):
 
 - **`unit`** (hard gate): `npm ci` → `npm test`. Runs on `pull_request` + `workflow_call`; **skipped on `schedule`** (`if: github.event_name != 'schedule'`).
-- **`model-guard`**: runs on all three triggers. Strict when `inputs.model_guard_strict == true` **or** `github.event_name == 'schedule'`; otherwise warn-and-skip on missing key. The empty-key strict failure is enforced by an explicit workflow step (GHA injects `""` for missing secrets — it never fails on its own). Nightly failure opens/updates a GitHub issue (`if: failure()`).
+- **`model-guard`**: runs on all three triggers. Strict when `inputs.model_guard_strict == true` **or** `github.event_name == 'schedule'`; otherwise warn-and-skip on missing key. The empty-key strict failure is enforced by an explicit workflow step (GHA injects `""` for missing secrets — it never fails on its own). Nightly failure opens/updates a GitHub issue (`if: failure()`). The job declares `permissions: {contents: read, issues: write}` — the default token can't create issues, and a partial `permissions:` block zeroes every unlisted scope (omit `contents: read` and `actions/checkout` breaks).
 - **`e2e`**: `xvfb-run -a npm run test:e2e`, `needs: unit`, skipped on `schedule`. **`continue-on-error: true` initially.** Flip to required is owned by a Linear sub-task of PE-271 with a due date 2 weeks after first merge — "≈20 green runs" is not machine-measurable and unowned heuristics never flip. Until the flip, releases are soft-gated on E2E **by design** — do not "fix" the `continue-on-error` when red E2E doesn't block a tag.
 
 **Release blocking = `unit` + `model-guard` (strict), never the aggregate** — a green aggregate can mask a `continue-on-error` e2e.
@@ -130,4 +130,5 @@ Rewrite the CLAUDE.md "Testing" section (currently "No automated test suite"): t
 - `npm test` stays offline-safe; live guard is a separate CI-only script.
 - Guard strictness is an explicit `workflow_call` input threaded from the release workflow — never inferred by the script from GitHub context or key presence.
 - Senate round 1 (9/10): `secrets: inherit`, guard cadence cron, `ANTHROPIC_BASE_URL` mock plumbing, E2E soft-gate rollout.
-- Senate round 2 (8/10): `model_guard_strict` input, schedule job-scoping, ECONNREFUSED + dummy key + `extensionTestsEnv`, no mock server, minimal-fixture count rule, `/v1/models` pagination, failure taxonomy, `ubuntu-24.04`, cron failure alerting, hermetic git fixtures. Kimi's claim that SDK ^0.32.1 lacks `ANTHROPIC_BASE_URL` support was checked against installed source and refuted.
+- Senate round 2 (8/10): `model_guard_strict` input, schedule job-scoping, ECONNREFUSED + dummy key + `extensionTestsEnv`, no mock server, minimal-fixture count rule, failure taxonomy, `ubuntu-24.04`, cron failure alerting, hermetic git fixtures. Kimi's claim that SDK ^0.32.1 lacks `ANTHROPIC_BASE_URL` support was checked against installed source and refuted.
+- Senate round 3 (9/10): per-id `GET /v1/models/{id}` probe replaces list-membership + pagination (shorthand ids like the current default `claude-sonnet-4-6` aren't in the list payload — verified against repo commit `2e27d93`); `permissions: {contents: read, issues: write}` on the nightly job; dummy key provisioned via fixture-workspace `.env` + `envFilePath` (envLoader reads the file, not `process.env` — verified `envLoader.ts:64`); git identity per temp repo.
