@@ -186,6 +186,7 @@
     "package:vsix": "bash tools/package-vsix.sh",
     "test": "npm run check-types && npm run lint && npm run test:model-static && npm run test:fixtures && npm run test:detector && npm run test:diagnostics && npm run test:regression && npm run test:smoke && npm run test:vsix",
     "test:model-static": "node test-fixtures/model-guard/check-static.mjs",
+    "test:model-guard": "node test-fixtures/model-guard/check-models.mjs",
     "test:detector": "tsx test-fixtures/eslint-detector/test-real-detector.mts",
     "test:vsix": "node test-fixtures/vsix/test-vsix-integrity.mjs",
     "test:diagnostics": "tsx --import ./test-fixtures/diagnostic-provider/register-loader.mjs ./test-fixtures/diagnostic-provider/test-multi-source.mts",
