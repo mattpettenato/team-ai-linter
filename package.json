@@ -184,7 +184,7 @@
     "check-types": "tsc --noEmit",
     "lint": "eslint src",
     "package:vsix": "bash tools/package-vsix.sh",
-    "test": "npm run check-types && npm run lint && npm run test:model-static && npm run test:ai-failure && npm run test:fixtures && npm run test:detector && npm run test:spellcheck && npm run test:diagnostics && npm run test:regression && npm run test:smoke && npm run test:git-safety && npm run test:vsix",
+    "test": "npm run check-types && npm run lint && npm run test:model-static && npm run test:ai-failure && npm run test:fixtures && npm run test:detector && npm run test:spellcheck && npm run test:diagnostics && npm run test:regression && npm run test:smoke && npm run test:git-safety",
     "test:model-static": "node test-fixtures/model-guard/check-static.mjs",
     "test:ai-failure": "tsx --import ./test-fixtures/regression/register-loader.mjs ./test-fixtures/ai-failure/test-ai-failure-fallback.mts",
     "test:model-guard": "node test-fixtures/model-guard/check-models.mjs",

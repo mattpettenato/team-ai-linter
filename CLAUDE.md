@@ -168,18 +168,24 @@ Bundled output: `dist/extension.js` (single file via esbuild).
 
 ## Testing
 
-Three layers, gated in CI (`.github/workflows/test.yml` — PRs, nightly, and releases via `release-extension.yml`):
+Three layers, gated in CI (`.github/workflows/test.yml` — pushes to main, PRs,
+and releases via `release-extension.yml`; the nightly cron runs the live model
+guard only). A fourth check, `npm run test:vsix` (packaged-artifact integrity),
+runs in the release workflow after packaging — not in `npm test`, because on a
+clean checkout it would self-build via an unpinned network `npx @vscode/vsce`.
 
 1. **Hermetic suite — `npm test`.** Type-check + ESLint + static model check
    (default ∈ enum + id shape) + every fixture suite under `test-fixtures/`
    (detector, diagnostics, regression, smoke, ai-failure, spellcheck,
-   git-safety, vsix). No network, no API key — runs identically offline and on
+   git-safety). No network, no API key — runs identically offline and on
    fork PRs. This is the hard CI gate.
 2. **Live model guard — `npm run test:model-guard`.** Probes
    `GET /v1/models/{id}` for the default + every enum id (per-id probe: enum
    holds alias ids the list endpoint doesn't return). CI-only; `--strict`
    (releases, nightly cron) fails on a missing `ANTHROPIC_API_KEY`, non-strict
-   (fork PRs) warns and skips. Nightly failure auto-opens a GitHub issue.
+   (fork PRs) warns and skips; infra-class failures (network/5xx/429) warn
+   instead of failing in non-strict so a provider outage can't red unrelated
+   PRs. Nightly failure auto-opens a GitHub issue.
 3. **E2E — `npm run test:e2e`.** `@vscode/test-electron` + mocha
    (`src/test/`). Launches a real extension host against a generated fixture
    workspace and asserts published diagnostics. Runs fully offline: dummy key

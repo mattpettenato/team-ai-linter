@@ -13,11 +13,13 @@ const require = createRequire(import.meta.url)
 const Module = require('node:module')
 const here = path.dirname(url.fileURLToPath(import.meta.url))
 const MOCK_VSCODE = path.resolve(here, '../regression/mock-vscode.cjs')
-const MOCK_CSPELL = path.resolve(here, 'mock-cspell-lib.cjs')
+// NOT a mock (unlike regression/mock-cspell-lib.cjs, the no-op stub): this
+// shim delegates to the real cspell-lib.
+const REAL_CSPELL_SHIM = path.resolve(here, 'real-cspell-shim.cjs')
 
 const originalResolve = Module._resolveFilename
 Module._resolveFilename = function patched(request, parent, ...rest) {
   if (request === 'vscode') return MOCK_VSCODE
-  if (request === 'cspell-lib') return MOCK_CSPELL
+  if (request === 'cspell-lib') return REAL_CSPELL_SHIM
   return originalResolve.call(this, request, parent, ...rest)
 }

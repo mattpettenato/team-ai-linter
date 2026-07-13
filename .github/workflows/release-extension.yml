@@ -7,23 +7,29 @@ on:
 
 permissions:
   contents: write
-  # The reusable test workflow's model-guard job requests issues: write (nightly
-  # alert step). A called workflow cannot elevate the caller's token — without
-  # this grant the tag build errors at startup before any job runs.
-  issues: write
 
 jobs:
   test:
     uses: ./.github/workflows/test.yml
+    # The reusable workflow's model-guard job requests issues: write (nightly
+    # alert step). A called workflow cannot elevate the caller's token — without
+    # this job-level grant the tag build errors at startup before any job runs.
+    # Scoped here (not workflow-level) so the release job never holds it.
+    permissions:
+      contents: read
+      issues: write
     with:
       model_guard_strict: true
     # Reusable workflows do NOT inherit caller secrets — omitting this silently
     # no-ops the model guard on every release (exactly how bug #1 shipped).
-    secrets: inherit
+    # Passed explicitly (not `inherit`) so future repo secrets stay out of reach.
+    secrets:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
   release:
     needs: test
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -48,6 +54,13 @@ jobs:
         # The old `vsce package --no-dependencies` flow shipped a 1.8 MB vsix
         # with no node_modules; this flow ships ~14.6 MB with everything needed.
         run: npm run package:vsix
+
+      - name: VSIX integrity check
+        # Runs here (against the just-built artifact) rather than inside `npm test`:
+        # on a clean checkout the check would otherwise self-build via an unpinned
+        # `npx @vscode/vsce`, breaking the hermetic no-network contract of the
+        # unit gate.
+        run: npm run test:vsix
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

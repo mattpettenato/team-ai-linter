@@ -17,7 +17,13 @@ const GitSafetyChecker = gitSafetyModule.GitSafetyChecker as new (workspaceRoot:
 }
 
 function sh(cwd: string, ...args: string[]) {
-  return execFileSync('git', args, { cwd, stdio: 'pipe' })
+  // Neutralize global/system git config: a developer's commit.gpgsign or
+  // core.hooksPath would otherwise hang or fail the fixture commits.
+  return execFileSync('git', args, {
+    cwd,
+    stdio: 'pipe',
+    env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' },
+  })
 }
 
 function buildRepo(): string {

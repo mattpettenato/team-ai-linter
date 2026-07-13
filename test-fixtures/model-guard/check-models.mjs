@@ -6,7 +6,10 @@
 // Exit contract:
 //   404 on any id                      -> exit 1  (stale model — the real failure)
 //   401/403                            -> exit 1  (bad key — infra, distinct message)
-//   network/5xx/429 after 3 attempts   -> exit 1  (infra, distinct message)
+//   network/5xx/429 after 3 attempts   -> exit 1 strict / exit 0 + ::warning:: otherwise
+//                                         (infra, not staleness — a provider outage
+//                                          must not red unrelated PRs)
+//   no ids found in package.json       -> exit 1  (vacuous run — guard checked nothing)
 //   no key, strict                     -> exit 1
 //   no key, not strict                 -> exit 0  + ::warning:: annotation
 import { readFileSync } from 'node:fs'
@@ -29,6 +32,13 @@ const here = dirname(fileURLToPath(import.meta.url))
 const pkg = JSON.parse(readFileSync(resolve(here, '../../package.json'), 'utf-8'))
 const modelCfg = pkg.contributes.configuration.properties['teamAiLinter.model']
 const ids = [...new Set([modelCfg.default, ...(modelCfg.enum ?? [])])].filter(Boolean)
+
+if (ids.length === 0) {
+  // Probing nothing must not read as green — on nightly runs this script is
+  // the only layer that executes at all.
+  console.error('  FAIL  model-guard: no model ids found in package.json (default/enum missing) — guard would validate nothing')
+  process.exit(1)
+}
 
 async function probe(id) {
   for (let attempt = 1; attempt <= 3; attempt++) {
@@ -56,6 +66,12 @@ const results = await Promise.all(ids.map(probe))
 let failed = false
 for (const r of results) {
   if (r.kind === 'ok') { console.log(`  PASS  model-guard: ${r.id} is live`); continue }
+  if (r.kind === 'infra' && !strict) {
+    // Transient provider trouble (outage, sustained 429) is not staleness —
+    // don't red unrelated PRs over it. Strict (release/nightly) still fails.
+    console.log(`::warning title=model-guard infra::${r.id} — ${r.detail}; live validation inconclusive, not failing PR`)
+    continue
+  }
   failed = true
   if (r.kind === 'stale') console.error(`  FAIL  model-guard: ${r.id} returned 404 — STALE MODEL ID. Update the default/enum in package.json.`)
   else if (r.kind === 'auth') console.error(`  FAIL  model-guard: ${r.id} — ${r.detail}. Bad/expired ANTHROPIC_API_KEY (infra, not staleness).`)

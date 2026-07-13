@@ -1,6 +1,8 @@
 name: Test
 
 on:
+  push:
+    branches: [main]      # merges and direct pushes stay tested between PR and tag
   pull_request:
   schedule:
     - cron: '0 6 * * *'   # nightly live model guard on main
@@ -13,13 +15,24 @@ on:
       ANTHROPIC_API_KEY:
         required: false
 
+# None of these jobs push; model-guard overrides with its own block.
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   unit:
     # Hermetic gate: types, lint, static model check, all fixture suites.
     if: github.event_name != 'schedule'
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -31,6 +44,7 @@ jobs:
     # secretless fork PRs. GHA injects "" for missing secrets and never fails
     # by itself — the strict empty-key failure lives in the script (--strict).
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     permissions:
       contents: read
       issues: write
@@ -39,6 +53,8 @@ jobs:
       MODEL_GUARD_STRICT: ${{ (inputs.model_guard_strict || github.event_name == 'schedule') && '1' || '0' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -68,15 +84,22 @@ jobs:
     if: github.event_name != 'schedule'
     needs: unit
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - uses: actions/cache@v4
         with:
           path: .vscode-test
-          key: vscode-test-${{ runner.os }}
+          # lockfile hash rotates the key on dependency bumps so the cached
+          # VS Code build can refresh; a bare runner.os key is write-once and
+          # freezes the first download forever.
+          key: vscode-test-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: vscode-test-${{ runner.os }}-
       - run: npm ci
       - run: xvfb-run -a npm run test:e2e

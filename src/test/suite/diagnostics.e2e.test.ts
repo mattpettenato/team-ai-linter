@@ -15,15 +15,18 @@
  */
 
 import * as assert from 'assert'
+import * as fs from 'fs'
 import * as path from 'path'
 import * as vscode from 'vscode'
 
 /**
- * Diagnostics contract: after teamAiLinter.runAll (which mdTitle.e2e.test.ts
- * has already executed against this workspace), published diagnostics must
- * carry the right source, severity mapping, and sane ranges — and the run must
- * have produced deterministic results DESPITE the AI layer failing (the
- * harness points ANTHROPIC_BASE_URL at a refused port: bug-#2 integration copy).
+ * Diagnostics contract: teamAiLinter.runAll may already have been executed by
+ * another suite against this workspace (suite load order is not guaranteed);
+ * the suiteSetup guard runs it here if diagnostics are absent. Published
+ * diagnostics must carry the right source, severity mapping, and sane ranges —
+ * and the run must have produced deterministic results DESPITE the AI layer
+ * failing (the harness points ANTHROPIC_BASE_URL at a refused port: bug-#2
+ * integration copy).
  */
 suite('diagnostics contract (E2E, AI offline)', () => {
   const root = vscode.workspace.workspaceFolders![0].uri.fsPath
@@ -55,7 +58,7 @@ suite('diagnostics contract (E2E, AI offline)', () => {
   })
 
   test('every diagnostic has a non-negative in-file range', () => {
-    const content = require('fs').readFileSync(targetUri.fsPath, 'utf-8') as string
+    const content = fs.readFileSync(targetUri.fsPath, 'utf-8')
     const lineCount = content.split('\n').length
     for (const d of vscode.languages.getDiagnostics(targetUri)) {
       assert.ok(d.range.start.line >= 0 && d.range.start.line < lineCount,

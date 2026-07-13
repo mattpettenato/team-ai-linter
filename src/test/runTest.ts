@@ -107,13 +107,20 @@ function buildWorkspace(): string {
     'teamAiLinter.autoUpdate': false,
     'teamAiLinter.enableEslint': false,
     // Model id is irrelevant to behavior here: ANTHROPIC_BASE_URL points at a
-    // refused port, so the AI layer always fails fast and only deterministic
-    // checks are under test. Overridable for ad-hoc live runs via TAL_E2E_MODEL.
+    // refused port (unconditionally — no run of this harness is ever live), so
+    // the AI layer always fails fast and only deterministic checks are under
+    // test. TAL_E2E_MODEL only overrides the id recorded in settings.
     'teamAiLinter.model': process.env.TAL_E2E_MODEL || 'claude-sonnet-4-6',
   }, null, 2));
 
-  // Commit everything so `git ls-files` sees the fixtures.
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, stdio: 'pipe' });
+  // Commit everything so `git ls-files` sees the fixtures. Global/system git
+  // config is neutralized: a developer's commit.gpgsign or core.hooksPath
+  // would otherwise hang or fail the fixture commit.
+  const git = (...args: string[]) => execFileSync('git', args, {
+    cwd: root,
+    stdio: 'pipe',
+    env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' },
+  });
   git('init', '-q');
   git('config', 'user.email', 'e2e@test.local');
   git('config', 'user.name', 'E2E');
@@ -140,7 +147,9 @@ async function main(): Promise<void> {
     });
   } catch (err) {
     console.error('[e2e] tests failed:', err);
-    process.exit(1);
+    // exitCode, not process.exit(): exit() would skip the finally block and
+    // leak the fixture workspace on every failed run.
+    process.exitCode = 1;
   } finally {
     fs.rmSync(workspace, { recursive: true, force: true });
   }

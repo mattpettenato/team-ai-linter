@@ -33,9 +33,9 @@ const issues: LintIssue[] = await service.lintTestFile(content, fixturePath, '# 
 
 const rules = issues.map(i => i.rule).sort()
 const expected = ['avoid_nth_selector', 'avoid_waitForTimeout']
-const pass =
-  expected.every(r => rules.includes(r)) &&
-  issues.filter(i => expected.includes(i.rule)).length === 2
+// Exact-set match: an unexpected extra rule is a spurious-finding regression
+// and must fail, not slip through a presence-only check.
+const pass = rules.length === expected.length && expected.every((r, i) => rules[i] === r)
 
 if (pass) {
   console.log(`  PASS  ai-failure-fallback: deterministic issues survive AI failure (${rules.join(', ')})`)
