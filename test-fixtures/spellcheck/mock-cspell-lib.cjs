@@ -1,47 +1,23 @@
-// Mock of cspell-lib for spell checker fixture tests.
-// Implements real spell checking logic for test cases, since loading the real
-// ESM-only cspell-lib via CJS fails with ERR_PACKAGE_PATH_NOT_EXPORTED.
-// This mock covers the subset of API used by src/services/detection/spellChecker.ts
+// cspell-lib is ESM-only (exports map has only the "import" condition), so the
+// tsx CJS compilation of spellChecker.ts can never require() it directly.
+// This shim delegates to the REAL cspell-lib via lazy dynamic import — no
+// spell-check logic is mocked; the suite exercises genuine cspell behavior.
 
 'use strict'
 
-const DICTIONARY = new Set([
-  'user', 'can', 'navigate', 'to', 'dashboard', 'test', 'async', 'click', 'login',
-  'await', 'checksumAI', 'hello', 'world', 'verify', // from spellChecker.ts initialization
-])
-
-async function getDefaultSettings() {
-  return {}
-}
-
-function mergeSettings(...args) {
-  return Object.assign({}, ...args)
-}
-
-async function spellCheckDocument(doc, opts, settings) {
-  const word = doc.text.toLowerCase()
-
-  // Check if word is in dictionary
-  if (DICTIONARY.has(word)) {
-    return { issues: [] }
-  }
-
-  // For known misspellings in tests, return an issue
-  if (word === 'naviagte' || word === 'dashbaord') {
-    return {
-      issues: [{
-        suggestions: [],
-        word,
-      }],
-    }
-  }
-
-  // All other words are assumed correct
-  return { issues: [] }
+let real = null
+const load = async () => {
+  if (!real) real = await import('cspell-lib')
+  return real
 }
 
 module.exports = {
-  getDefaultSettings,
-  mergeSettings,
-  spellCheckDocument,
+  getDefaultSettings: async (...args) => (await load()).getDefaultSettings(...args),
+  // Sync in cspell's API; spellChecker.ts only calls it after awaiting
+  // getDefaultSettings, so the real module is always loaded by then.
+  mergeSettings: (...args) => {
+    if (!real) throw new Error('cspell shim: mergeSettings called before getDefaultSettings resolved')
+    return real.mergeSettings(...args)
+  },
+  spellCheckDocument: async (...args) => (await load()).spellCheckDocument(...args),
 }
