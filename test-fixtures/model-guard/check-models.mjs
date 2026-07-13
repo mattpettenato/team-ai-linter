@@ -36,6 +36,8 @@ async function probe(id) {
     try {
       res = await fetch(`https://api.anthropic.com/v1/models/${encodeURIComponent(id)}`, {
         headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        // Hung (not refused) connections otherwise stall until the GHA job timeout.
+        signal: AbortSignal.timeout(10_000),
       })
     } catch (err) {
       if (attempt === 3) return { id, kind: 'infra', detail: `network error: ${err.message}` }

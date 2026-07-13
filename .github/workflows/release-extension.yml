@@ -7,6 +7,10 @@ on:
 
 permissions:
   contents: write
+  # The reusable test workflow's model-guard job requests issues: write (nightly
+  # alert step). A called workflow cannot elevate the caller's token — without
+  # this grant the tag build errors at startup before any job runs.
+  issues: write
 
 jobs:
   test:

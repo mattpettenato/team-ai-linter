@@ -1,8 +1,8 @@
 // ESM-only cspell-lib can't be loaded via require() in tsx's CJS environment,
-// even with Node >= 20.19 (exports field validation blocks it). Instead, we
-// provide a minimal mock that implements the spell checking API for test cases.
-// The real spell checker (extracting words, checking against dictionaries) is
-// tested via the logic in src/services/detection/spellChecker.ts.
+// even with Node >= 20.19 (its exports map defines only the "import" condition).
+// Instead, requires of 'cspell-lib' resolve to a CJS shim that lazily
+// dynamic-imports the REAL cspell-lib and delegates to it — no spell logic is
+// mocked; the suite exercises genuine cspell dictionaries.
 import { register, createRequire } from 'node:module'
 import * as path from 'node:path'
 import * as url from 'node:url'

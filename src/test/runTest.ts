@@ -106,8 +106,9 @@ function buildWorkspace(): string {
     'teamAiLinter.envFilePath': path.join(root, '.env'),
     'teamAiLinter.autoUpdate': false,
     'teamAiLinter.enableEslint': false,
-    // A current, valid model so the AI layer succeeds and the full pipeline
-    // (AI + deterministic) is exercised. The shipped default is stale.
+    // Model id is irrelevant to behavior here: ANTHROPIC_BASE_URL points at a
+    // refused port, so the AI layer always fails fast and only deterministic
+    // checks are under test. Overridable for ad-hoc live runs via TAL_E2E_MODEL.
     'teamAiLinter.model': process.env.TAL_E2E_MODEL || 'claude-sonnet-4-6',
   }, null, 2));
 
