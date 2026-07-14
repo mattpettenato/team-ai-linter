@@ -97,7 +97,7 @@ const surface = {
 // runtime (and therefore in the fixture suite), never silently misbehave.
 module.exports = new Proxy(surface, {
   get(target, prop) {
-    if (prop in target || typeof prop === 'symbol' || prop === 'then') {
+    if (prop in target || typeof prop === 'symbol' || prop === 'then' || prop === '__esModule') {
       return target[prop]
     }
     throw new Error(

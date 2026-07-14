@@ -25,6 +25,11 @@
  */
 import * as fs from 'fs'
 import * as path from 'path'
+import { detectDeterministicPatterns } from '../services/detection/deterministicDetector'
+import { parseImportsFromContent, getLocalImports } from '../services/importParser'
+import { PathResolver } from '../services/pathResolver'
+import { GitSafetyChecker } from '../services/git/gitSafetyChecker'
+import { LintIssue, GitIssue } from '../types'
 
 declare const __CLI_VERSION__: string
 
@@ -138,7 +143,6 @@ async function main(): Promise<void> {
   process.exit(findings.length > 0 ? 1 : 0)
 }
 
-// Task 3 replaces this placeholder implementation.
 interface CliFinding {
   file: string
   line: number
@@ -148,9 +152,90 @@ interface CliFinding {
   message: string
   layer: 'static' | 'git'
 }
-async function lintTargets(_files: string[], _realRoot: string):
+
+const SOURCE_FILE_RE = /\.(ts|js|tsx|jsx|mts|mjs)$/
+
+function rel(realRoot: string, abs: string): string {
+  return path.relative(realRoot, abs).split(path.sep).join('/')
+}
+
+function staticFinding(realRoot: string, file: string, issue: LintIssue): CliFinding {
+  return {
+    file: rel(realRoot, file),
+    line: issue.line,
+    ...(issue.endLine !== undefined ? { endLine: issue.endLine } : {}),
+    rule: issue.rule,
+    severity: issue.severity,
+    message: issue.message,
+    layer: 'static',
+  }
+}
+
+function gitFinding(realRoot: string, file: string, issue: GitIssue): CliFinding {
+  return {
+    file: rel(realRoot, file),
+    line: issue.importLine,
+    rule: 'git-safety',
+    severity: issue.severity,
+    message: `${issue.message} (import: ${issue.moduleSpecifier})`,
+    layer: 'git',
+  }
+}
+
+function isGitRepo(realRoot: string): boolean {
+  // .git is a dir in a normal checkout and a FILE in a worktree — existsSync covers both
+  return fs.existsSync(path.join(realRoot, '.git'))
+}
+
+async function lintTargets(files: string[], realRoot: string):
   Promise<{ findings: CliFinding[]; imports: string[] }> {
-  return { findings: [], imports: [] }
+  const findings: CliFinding[] = []
+  const targetSet = new Set(files)
+  const helperSet = new Set<string>()
+  const resolver = new PathResolver(realRoot)
+
+  const gitEnabled = isGitRepo(realRoot)
+  const gitChecker = gitEnabled ? new GitSafetyChecker(realRoot) : null
+  if (!gitEnabled) console.error(`git safety skipped: ${realRoot} is not a git repository`)
+
+  for (const file of files) {
+    const content = fs.readFileSync(file, 'utf8')
+
+    const staticIssues = await detectDeterministicPatterns(content, file)
+    findings.push(...staticIssues.map(i => staticFinding(realRoot, file, i)))
+
+    if (gitChecker) {
+      try {
+        const gitIssues = await gitChecker.checkImports(content, file)
+        findings.push(...gitIssues.map(i => gitFinding(realRoot, file, i)))
+      } catch (err) {
+        console.error(`git safety skipped for ${rel(realRoot, file)}: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+
+    for (const imp of getLocalImports(parseImportsFromContent(content, file))) {
+      const resolved = resolver.resolveImport(imp.moduleSpecifier, file)
+      if (!resolved) {
+        console.error(`unresolved import "${imp.moduleSpecifier}" in ${rel(realRoot, file)} — skipped`)
+        continue
+      }
+      let real: string
+      try { real = fs.realpathSync(resolved) } catch { continue }
+      if (real !== realRoot && !real.startsWith(realRoot + path.sep)) continue // symlink escape
+      if (real.includes(`${path.sep}node_modules${path.sep}`)) continue
+      if (!SOURCE_FILE_RE.test(real)) continue
+      if (targetSet.has(real)) continue
+      helperSet.add(real)
+    }
+  }
+
+  for (const helper of [...helperSet].sort()) {
+    const content = fs.readFileSync(helper, 'utf8')
+    const issues = await detectDeterministicPatterns(content, helper)
+    findings.push(...issues.map(i => staticFinding(realRoot, helper, i)))
+  }
+
+  return { findings, imports: [...helperSet].sort().map(h => rel(realRoot, h)) }
 }
 
 main().catch((err: unknown) => {

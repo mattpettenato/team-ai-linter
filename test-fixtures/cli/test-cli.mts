@@ -4,6 +4,8 @@
  * This file starts with stub-behavior cases and grows in Tasks 2-3.
  */
 import { execFileSync, spawnSync } from 'node:child_process'
+import * as fs from 'node:fs'
+import * as os from 'node:os'
 import * as path from 'node:path'
 import * as url from 'node:url'
 
@@ -90,6 +92,35 @@ check('clean file: exit 0, valid JSON envelope', () => {
   if (doc.schemaVersion !== 1) throw new Error('schemaVersion')
   if (typeof doc.cliVersion !== 'string' || !doc.cliVersion) throw new Error('cliVersion')
   if (!Array.isArray(doc.findings) || !Array.isArray(doc.imports)) throw new Error('arrays missing')
+})
+
+check('dirty file: exit 1, findings on target AND imported helper', () => {
+  const r = runCli(['--json', '--root', fixturesDir, '--', 'dirty.spec.ts'])
+  if (r.status !== 1) throw new Error(`status ${r.status} stderr: ${r.stderr}`)
+  const doc = JSON.parse(r.stdout)
+  const files = new Set(doc.findings.map((f: { file: string }) => f.file))
+  if (!files.has('dirty.spec.ts')) throw new Error(`no finding on target: ${[...files]}`)
+  if (!files.has('helper.ts')) throw new Error(`no finding on imported helper: ${[...files]}`)
+  if (!doc.imports.includes('helper.ts')) throw new Error(`imports list: ${doc.imports}`)
+  for (const f of doc.findings) {
+    for (const key of ['file', 'line', 'rule', 'severity', 'message', 'layer']) {
+      if (!(key in f)) throw new Error(`finding missing ${key}: ${JSON.stringify(f)}`)
+    }
+    if (!['static', 'git'].includes(f.layer)) throw new Error(`bad layer ${f.layer}`)
+  }
+})
+
+check('stdout is pure JSON despite detector logging', () => {
+  const r = runCli(['--json', '--root', fixturesDir, '--', 'dirty.spec.ts'])
+  JSON.parse(r.stdout) // throws if any log line leaked onto stdout
+})
+
+check('non-git root: git safety skipped with warning, run still succeeds', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tal-cli-'))
+  fs.copyFileSync(path.join(fixturesDir, 'clean.spec.ts'), path.join(tmp, 'clean.spec.ts'))
+  const r = runCli(['--json', '--root', tmp, '--', 'clean.spec.ts'])
+  if (r.status !== 0) throw new Error(`status ${r.status} stderr: ${r.stderr}`)
+  if (!/git safety skipped/i.test(r.stderr)) throw new Error(`no skip warning: ${r.stderr}`)
 })
 
 process.exit(failures === 0 ? 0 : 1)

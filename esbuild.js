@@ -48,6 +48,17 @@ async function main() {
       sourcemap: false,
       platform: 'node',
       outfile: 'dist/linter-cli.js',
+      external: [
+        'vscode',
+        'eslint',
+        '@eslint/js',
+        'typescript-eslint',
+        '@typescript-eslint/parser',
+        '@typescript-eslint/utils',
+        '@typescript-eslint/eslint-plugin',
+        'globals',
+        'checksumai-eslint-config',
+      ],
       alias: {
         vscode: './src/cli/stubs/vscode-stub.cjs',
         'cspell-lib': './src/cli/stubs/cspell-lib-stub.cjs',
