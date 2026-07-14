@@ -179,6 +179,7 @@
   "scripts": {
     "vscode:prepublish": "npm run package",
     "compile": "npm run check-types && node esbuild.js",
+    "compile:cli": "node esbuild.js --cli --production",
     "watch": "node esbuild.js --watch",
     "package": "npm run check-types && node esbuild.js --production",
     "check-types": "tsc --noEmit",
@@ -188,6 +189,7 @@
     "test:model-static": "node test-fixtures/model-guard/check-static.mjs",
     "test:ai-failure": "tsx --import ./test-fixtures/regression/register-loader.mjs ./test-fixtures/ai-failure/test-ai-failure-fallback.mts",
     "test:model-guard": "node test-fixtures/model-guard/check-models.mjs",
+    "test:cli": "tsx test-fixtures/cli/test-cli.mts",
     "test:detector": "tsx test-fixtures/eslint-detector/test-real-detector.mts",
     "test:spellcheck": "tsx --import ./test-fixtures/spellcheck/register-loader.mjs ./test-fixtures/spellcheck/test-spellcheck.mts",
     "test:vsix": "node test-fixtures/vsix/test-vsix-integrity.mjs",
