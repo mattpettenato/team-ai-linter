@@ -51,6 +51,14 @@ git tag v0.4.0 && git push origin v0.4.0
 
 The auto-updater in the extension checks GitHub Releases and prompts users to install new versions.
 
+**Downstream consumer — the `/lint-tests` marketplace skill.** The `lint-tests` plugin in
+[checksum-ai/checksum-claude-plugins](https://github.com/checksum-ai/checksum-claude-plugins)
+pins a specific release tag and its `SHA256SUMS_SHA256` hash (printed in the release
+workflow's step summary). It does NOT auto-update: after cutting a release that changes
+CLI behavior or the JSON contract, update the two pins in the skill's `SKILL.md`
+(every `v<version>` occurrence + the hash) and push to the marketplace repo, or teammates
+keep running the old CLI. Extension-only releases don't require a skill bump.
+
 ## Project Structure
 
 ```
