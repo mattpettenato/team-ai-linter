@@ -27,14 +27,11 @@ import { runTests } from '@vscode/test-electron';
  * all three rules, then launches a real VS Code instance, loads the bundled
  * extension, runs `teamAiLinter.runAll`, and asserts the diagnostics appear.
  *
- * Requires a working ANTHROPIC_API_KEY in the environment: the deterministic
- * scan only runs after a successful Claude API call, so the full pipeline must
- * actually reach the model. Run with:
+ * Runs fully offline: AI layer fails fast (refused port), deterministic layer
+ * still executes. No ANTHROPIC_API_KEY needed. Run with:
  *
- *   ANTHROPIC_API_KEY=sk-... npm run test:e2e
+ *   npm run test:e2e
  */
-
-const apiKey = process.env.ANTHROPIC_API_KEY;
 
 /** Write a file, creating parent directories as needed. */
 function write(root: string, relPath: string, content: string): void {
@@ -102,19 +99,28 @@ function buildWorkspace(): string {
     '  await expect(page.getByRole("heading")).toBeVisible();\n' +
     '});\n');
 
-  // Point the extension at a local .env carrying the key.
-  write(root, '.env', `ANTHROPIC_API_KEY=${apiKey}\n`);
+  // envLoader reads the key from this file (not process.env) and requires
+  // >= 10 chars. The value is fake: the AI call is pointed at a refused port.
+  write(root, '.env', 'ANTHROPIC_API_KEY=sk-ant-test-dummy-key\n');
   write(root, '.vscode/settings.json', JSON.stringify({
     'teamAiLinter.envFilePath': path.join(root, '.env'),
     'teamAiLinter.autoUpdate': false,
     'teamAiLinter.enableEslint': false,
-    // A current, valid model so the AI layer succeeds and the full pipeline
-    // (AI + deterministic) is exercised. The shipped default is stale.
+    // Model id is irrelevant to behavior here: ANTHROPIC_BASE_URL points at a
+    // refused port (unconditionally — no run of this harness is ever live), so
+    // the AI layer always fails fast and only deterministic checks are under
+    // test. TAL_E2E_MODEL only overrides the id recorded in settings.
     'teamAiLinter.model': process.env.TAL_E2E_MODEL || 'claude-sonnet-4-6',
   }, null, 2));
 
-  // Commit everything so `git ls-files` sees the fixtures.
-  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, stdio: 'pipe' });
+  // Commit everything so `git ls-files` sees the fixtures. Global/system git
+  // config is neutralized: a developer's commit.gpgsign or core.hooksPath
+  // would otherwise hang or fail the fixture commit.
+  const git = (...args: string[]) => execFileSync('git', args, {
+    cwd: root,
+    stdio: 'pipe',
+    env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' },
+  });
   git('init', '-q');
   git('config', 'user.email', 'e2e@test.local');
   git('config', 'user.name', 'E2E');
@@ -125,14 +131,6 @@ function buildWorkspace(): string {
 }
 
 async function main(): Promise<void> {
-  if (!apiKey) {
-    console.error(
-      '\nANTHROPIC_API_KEY is not set. The deterministic .checksum.md scan only ' +
-      'runs after a successful Claude API call, so this E2E needs a real key.\n' +
-      'Run:  ANTHROPIC_API_KEY=sk-... npm run test:e2e\n');
-    process.exit(1);
-  }
-
   const extensionDevelopmentPath = path.resolve(__dirname, '../../');
   const extensionTestsPath = path.resolve(__dirname, './suite/index');
   const workspace = buildWorkspace();
@@ -143,10 +141,15 @@ async function main(): Promise<void> {
       extensionDevelopmentPath,
       extensionTestsPath,
       launchArgs: [workspace, '--disable-extensions'],
+      // Closed localhost port -> instant ECONNREFUSED in the SDK. Read by the
+      // Anthropic client constructor inside the extension host process.
+      extensionTestsEnv: { ANTHROPIC_BASE_URL: 'http://127.0.0.1:1' },
     });
   } catch (err) {
     console.error('[e2e] tests failed:', err);
-    process.exit(1);
+    // exitCode, not process.exit(): exit() would skip the finally block and
+    // leak the fixture workspace on every failed run.
+    process.exitCode = 1;
   } finally {
     fs.rmSync(workspace, { recursive: true, force: true });
   }

@@ -28,9 +28,12 @@ npm run watch         # esbuild watch mode (no type checking)
 npm run package       # Type-check + production esbuild build (minified)
 npm run check-types   # TypeScript type checking only (tsc --noEmit)
 npm run lint          # ESLint on src/
+npm test              # Hermetic suite (type-check + lint + static checks + fixtures)
+npm run test:model-guard  # Live model guard (probes Anthropic API per-id)
+npm run test:e2e      # Offline VS Code E2E (no API key needed)
 ```
 
-To test the extension: build with `npm run package`, then install the `.vsix` via VS Code.
+To test the extension in VS Code: build with `npm run package`, then install the `.vsix` via VS Code.
 
 ## Releasing
 
@@ -165,12 +168,39 @@ Bundled output: `dist/extension.js` (single file via esbuild).
 
 ## Testing
 
-No automated test suite. The extension is tested manually:
-1. Build with `npm run package`
-2. Install the `.vsix` in VS Code/Cursor
-3. Open a test file and trigger linting (`Cmd+Shift+L`)
+Three layers, gated in CI (`.github/workflows/test.yml` — pushes to main, PRs,
+and releases via `release-extension.yml`; the nightly cron runs the live model
+guard only). A fourth check, `npm run test:vsix` (packaged-artifact integrity),
+runs in the release workflow after packaging — not in `npm test`, because on a
+clean checkout it would self-build via an unpinned network `npx @vscode/vsce`.
 
-No test runner or test framework is configured.
+1. **Hermetic suite — `npm test`.** Type-check + ESLint + static model check
+   (default ∈ enum + id shape) + every fixture suite under `test-fixtures/`
+   (detector, diagnostics, regression, smoke, ai-failure, spellcheck,
+   git-safety). No network, no API key — runs identically offline and on
+   fork PRs. This is the hard CI gate.
+2. **Live model guard — `npm run test:model-guard`.** Probes
+   `GET /v1/models/{id}` for the default + every enum id (per-id probe: enum
+   holds alias ids the list endpoint doesn't return). CI-only; `--strict`
+   (releases, nightly cron) fails on a missing `ANTHROPIC_API_KEY`, non-strict
+   (fork PRs) warns and skips; infra-class failures (network/5xx/429) warn
+   instead of failing in non-strict so a provider outage can't red unrelated
+   PRs. Nightly failure auto-opens a GitHub issue.
+3. **E2E — `npm run test:e2e`.** `@vscode/test-electron` + mocha
+   (`src/test/`). Launches a real extension host against a generated fixture
+   workspace and asserts published diagnostics. Runs fully offline: dummy key
+   in the fixture `.env`, `ANTHROPIC_BASE_URL` pointed at a refused port — the
+   AI layer always fails, which doubles as the standing regression test that
+   deterministic checks survive AI failure. Requires no key. In CI it is a
+   soft gate (`continue-on-error`) until flipped per the PE-271 sub-task.
+
+**Adding a fixture suite:** create `test-fixtures/<name>/test-<name>.mts`, run
+it via `tsx --import ./test-fixtures/regression/register-loader.mjs` (stubs
+`vscode` + `cspell-lib`; use `test-fixtures/spellcheck/register-loader.mjs` to
+get real cspell), print per-case `PASS`/`FAIL` lines, exit non-zero on failure,
+add a `test:<name>` script, and chain it into `npm test`.
+
+Node ≥ 22 (CI) / ≥ 20.19 (local minimum — `require(esm)` for cspell-lib).
 
 ## Configuration
 
