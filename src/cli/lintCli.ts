@@ -38,8 +38,9 @@ const TEST_FILE_RE = /\.(test|spec)\.(ts|js|tsx|jsx)$/
 const USAGE = 'usage: linter-cli --json [--root <dir>] -- <files|dirs|globs...>'
 
 // Detectors narrate progress via console.log; stdout must stay JSON-only.
-// Redirect BEFORE importing anything that logs.
-console.log = (...args: unknown[]) => console.error(...(args as []))
+// Redirect before module bodies execute at require time; detectors that log
+// will call the redirected console.log at runtime, not module-load time.
+console.log = (...args: Parameters<typeof console.error>) => console.error(...args)
 
 interface CliArgs {
   root: string
@@ -115,7 +116,16 @@ function expandTargets(rawTargets: string[], root: string, realRoot: string): st
       if (!globSync) fail(`glob targets require Node >= 22: ${raw}`)
       const matches = globSync(raw, { cwd: root })
       if (matches.length === 0) fail(`glob matched nothing: ${raw}`)
-      matches.forEach((m: string) => files.add(contain(path.resolve(root, m), realRoot, 'target')))
+      matches.forEach((m: string) => {
+        const abs = path.resolve(root, m)
+        try {
+          if (fs.statSync(abs).isFile()) {
+            files.add(contain(abs, realRoot, 'target'))
+          }
+        } catch {
+          // skip stat failures (broken symlinks, permission denied, etc.)
+        }
+      })
     } else {
       fail(`target not found: ${raw}`)
     }
@@ -133,14 +143,16 @@ async function main(): Promise<void> {
   // Findings + imports are produced in lintTargets (Task 3).
   const { findings, imports } = await lintTargets(files, realRoot)
 
-  process.stdout.write(JSON.stringify({
+  const payload = JSON.stringify({
     schemaVersion: SCHEMA_VERSION,
     cliVersion: __CLI_VERSION__,
     root: realRoot,
     findings,
     imports,
-  }, null, 2) + '\n')
-  process.exit(findings.length > 0 ? 1 : 0)
+  }, null, 2) + '\n'
+  const code = findings.length > 0 ? 1 : 0
+  // Exit in write callback to ensure stdout is flushed before exit (fixes 64KB truncation on pipe)
+  process.stdout.write(payload, () => process.exit(code))
 }
 
 interface CliFinding {
@@ -221,7 +233,10 @@ async function lintTargets(files: string[], realRoot: string):
       }
       let real: string
       try { real = fs.realpathSync(resolved) } catch { continue }
-      if (real !== realRoot && !real.startsWith(realRoot + path.sep)) continue // symlink escape
+      if (real !== realRoot && !real.startsWith(realRoot + path.sep)) {
+        console.error(`import "${imp.moduleSpecifier}" in ${rel(realRoot, file)} resolves outside --root — skipped`)
+        continue
+      }
       if (real.includes(`${path.sep}node_modules${path.sep}`)) continue
       if (!SOURCE_FILE_RE.test(real)) continue
       if (targetSet.has(real)) continue

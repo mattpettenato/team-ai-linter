@@ -60,8 +60,13 @@ const cli = path.join(repoRoot, 'dist', 'linter-cli.js')
 const fixturesDir = path.join(here, 'fixtures')
 
 interface RunResult { status: number; stdout: string; stderr: string }
-function runCli(args: string[], cwd: string = repoRoot): RunResult {
-  const res = spawnSync('node', [cli, ...args], { cwd, encoding: 'utf8' })
+function runCli(args: string[], cwd: string = repoRoot, opts?: { maxBuffer?: number; timeout?: number }): RunResult {
+  const res = spawnSync('node', [cli, ...args], {
+    cwd,
+    encoding: 'utf8',
+    maxBuffer: opts?.maxBuffer ?? 10 * 1024 * 1024, // 10MB default for large outputs
+    timeout: opts?.timeout ?? 30000, // 30s default
+  })
   return { status: res.status ?? -1, stdout: res.stdout ?? '', stderr: res.stderr ?? '' }
 }
 
@@ -121,6 +126,43 @@ check('non-git root: git safety skipped with warning, run still succeeds', () =>
   const r = runCli(['--json', '--root', tmp, '--', 'clean.spec.ts'])
   if (r.status !== 0) throw new Error(`status ${r.status} stderr: ${r.stderr}`)
   if (!/git safety skipped/i.test(r.stderr)) throw new Error(`no skip warning: ${r.stderr}`)
+})
+
+check('large output: >128KB JSON parses without truncation (stdout flush on exit)', () => {
+  // Generate a temp spec file with repeated hardcoded waits to create large output
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tal-cli-large-'))
+  let content = `import { test } from '@playwright/test'\ntest('large fixture', async ({ page }) => {\n`
+  // Each hardcoded wait is one finding; generate enough to exceed 128KB output
+  for (let i = 0; i < 2000; i++) {
+    content += `  await page.waitForTimeout(100)\n`
+  }
+  content += '})\n'
+  const specPath = path.join(tmp, 'large.spec.ts')
+  fs.writeFileSync(specPath, content)
+  // Run with maxBuffer large enough for the output
+  const r = runCli(['--json', '--root', tmp, '--', specPath], repoRoot, { maxBuffer: 10 * 1024 * 1024 })
+  if (r.status !== 1) throw new Error(`status ${r.status} (expected 1 for findings) stderr: ${r.stderr}`)
+  // Critical: JSON must parse completely (no truncation at 64KB)
+  let doc: unknown
+  try { doc = JSON.parse(r.stdout) } catch (e) {
+    throw new Error(`JSON.parse failed: ${e instanceof Error ? e.message : String(e)}\nstdout length: ${r.stdout.length}`)
+  }
+  if (!Array.isArray((doc as unknown as { findings?: unknown }).findings)) {
+    throw new Error('findings not an array')
+  }
+  const findingsCount = ((doc as unknown as { findings: unknown[] }).findings ?? []).length
+  if (findingsCount < 100) throw new Error(`too few findings: ${findingsCount} (expected ~2000)`)
+})
+
+check('directory target: finds issues in test file via directory expansion', () => {
+  const r = runCli(['--json', '--root', fixturesDir, '--', '.'])
+  if (r.status !== 1) throw new Error(`status ${r.status} (expected 1) stderr: ${r.stderr}`)
+  const doc = JSON.parse(r.stdout)
+  const files = new Set(doc.findings.map((f: { file: string }) => f.file))
+  // dirty.spec.ts has findings; clean.spec.ts does not
+  if (!files.has('dirty.spec.ts')) throw new Error(`no findings on dirty.spec.ts: ${[...files]}`)
+  // Should also include the imported helper
+  if (!files.has('helper.ts')) throw new Error(`no findings on imported helper: ${[...files]}`)
 })
 
 process.exit(failures === 0 ? 0 : 1)

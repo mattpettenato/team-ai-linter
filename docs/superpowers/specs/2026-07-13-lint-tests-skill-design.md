@@ -23,9 +23,9 @@ Also lands the standalone CLI that CE-8907 (CI gate) will consume.
 | Deterministic layer | Standalone CLI built in this repo (shared with CE-8907) |
 | AI-judgment pass | Claude-native: session model reads rules + files, judges directly. No API key, works on any teammate's Claude Code subscription, enables inline fixes |
 | Distribution | GitHub Release assets, version **pinned** in SKILL.md (version + sha256). Bump = skill republish (cheap via `/add-checksum-skill`) |
-| CLI layers | deterministic + AST + import resolution (helpers checked) + git safety. No spell check |
+| CLI layers | deterministic + AST + import resolution (helpers checked) + git safety. No spell check; deterministic and AST already deduplicated at emission |
 | Offline behavior | **Fail closed.** No degraded AI-only mode, no workspace-rules fallback |
-| Dedup | None mechanical. CLI findings passed to Claude as "already flagged — don't re-report" context |
+| Dedup | None mechanical. CLI findings passed to Claude as "already flagged — don't re-report" context; within CLI layers, deterministic merges with AST results to avoid duplication |
 
 ## Part 1: Standalone CLI (`team-ai-linter` repo)
 
@@ -65,9 +65,10 @@ node linter-cli.js --json --root <repo-root> -- <files-or-globs...>
 {
   "schemaVersion": 1,
   "cliVersion": "0.5.0",
+  "root": "/abs/path/to/repo",
   "findings": [
     { "file": "...", "line": 1, "endLine": 1, "rule": "...",
-      "severity": "warning", "message": "...", "layer": "det|ast|git" }
+      "severity": "warning", "message": "...", "layer": "static|git" }
   ],
   "imports": ["resolved/helper/paths.ts"]
 }
@@ -143,14 +144,17 @@ SHA256SUMS_SHA256=<filled-at-release>
    flagged — do not re-report." Model reports only findings it would defend;
    each carries `{file, line, rule, confidence, message}`; findings below 0.5
    confidence are dropped (coarse gate — self-scored, not calibrated).
-6. **Report** — one table grouped by file; layer tags `[det]/[ast]/[git]/[ai]`;
+6. **Report** — one table grouped by file; layer tags `[static]/[git]/[ai]`;
    severity; message. Header states CLI version + "Claude judgment by
    <session model>".
 7. **Fixes** — list fixable findings; on approval apply as **one combined
    diff**, shown before writing.
 
 **Parity notes stated in SKILL.md:** no spell layer; no checksumAIAnalyzer
-(v1); `[ai]` findings are advisory and vary by session model.
+(v1); `[ai]` findings are advisory and vary by session model. CLI excludes two
+workspace-wide checks: colon-filename scan and `.checksum.md` title validation,
+which depend on `vscode.workspace.workspaceFolders` that the CLI does not fake
+(v1 design decision).
 
 **Known gaps (accepted, documented):**
 
