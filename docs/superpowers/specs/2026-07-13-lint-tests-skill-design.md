@@ -44,11 +44,15 @@ explicitly; the stub does not fake `workspaceFolders`.
 **Interface:**
 
 ```
-node linter-cli.js --json --root <repo-root> <files-or-globs...>
+node linter-cli.js --json --root <repo-root> -- <files-or-globs...>
 ```
 
+- `--` terminates options so a target starting with `-` can't be parsed as a
+  flag
 - Globs expanded by the CLI itself (not the shell) for cross-platform
-  consistency; targets resolving outside `--root` are rejected
+  consistency; every target AND every resolved import is `realpath`-resolved
+  and must land inside `--root` (rejects symlink escapes). Unresolvable
+  imports: skip with a note in stderr, never fail the run
 - Runs deterministic + AST detectors on each target; resolves imports
   (`importParser` + `pathResolver`) and runs deterministic checks on
   repo-contained imported helper files; runs git safety check
@@ -81,7 +85,9 @@ node linter-cli.js --json --root <repo-root> <files-or-globs...>
    --json --root . <dirty-fixture>`; assert valid JSON + exit 1) — same spirit
    as the existing `test:vsix` gate; a broken asset cannot ship
 3. `shasum -a 256 linter-cli.js guidelines.md > SHA256SUMS`
-4. Upload three release assets: `linter-cli.js`, `guidelines.md`, `SHA256SUMS`
+4. `shasum -a 256 SHA256SUMS` → printed to the workflow summary (the
+   hash-of-hashes the skill pins — mechanical provenance, no manual backfill)
+5. Upload three release assets: `linter-cli.js`, `guidelines.md`, `SHA256SUMS`
 
 `guidelines.md` ships as an asset so the skill's rules doc is version-coupled
 to the CLI — one tag, one coherent rule set. (Its hash costs one extra line in
@@ -104,22 +110,33 @@ SHA256SUMS_SHA256=<filled-at-release>
 
 **Flow:**
 
-1. **Preflight** — check `node` exists; find repo root.
-2. **Resolve targets** — arg path/glob if given; else changed
-   `*.spec.ts`/`*.test.ts`(+ `.js/.jsx/.tsx`) files vs
-   `merge-base(HEAD, origin/<default-branch>)`; no origin or nothing changed →
-   ask the user. Targets must resolve inside the repo root.
+1. **Preflight** — check `node` and `curl` exist; find repo root. Skill is
+   macOS/Linux only in v1 (relies on `shasum`; CEs run Macs).
+2. **Resolve targets** — arg path/glob if given; else changed files vs
+   `merge-base(HEAD, origin/<default-branch>)` **plus untracked files**
+   (`git ls-files --others --exclude-standard`), both filtered to
+   `*.spec.ts`/`*.test.ts` (+ `.js/.jsx/.tsx`) — a brand-new never-added test
+   is the most common target and must not be silently skipped. Not a git repo,
+   no origin, or nothing found → ask the user for an explicit path. Targets
+   must resolve inside the repo root.
 3. **Fetch + verify tools** — cache dir `~/.cache/team-ai-linter/<version>/`.
    Download `linter-cli.js`, `guidelines.md`, `SHA256SUMS` from the pinned
    release tag if absent. Verify `SHA256SUMS` against the pinned hash, then
-   `shasum -a 256 -c SHA256SUMS` (correct checksums-file format) — **on every
-   run, cache hit included**. Any mismatch → delete cache, refuse, tell user.
-   No network AND no cache → **stop** with "first run needs network once."
-4. **Run CLI** — `node <cache>/linter-cli.js --json --root <root> <targets>`.
-   Exit 1 = findings (success); exit 2 = surface stderr and stop.
+   `shasum -a 256 -c SHA256SUMS` run **from inside the cache dir** (the sums
+   file holds bare filenames) — **on every run, cache hit included**. Any
+   mismatch → delete cache, refuse, tell user. No network AND no cache →
+   **stop** with "first run needs network once."
+4. **Run CLI** — `node <abs-cache-path>/linter-cli.js --json --root <root> --
+   <targets>`. Check the JSON's `cliVersion` matches the pin (normalizing the
+   `v` prefix) — stale/foreign artifact refuses. Exit 0 = clean, **continue to
+   AI pass**; exit 1 = findings (success), continue; exit 2 = surface stderr
+   and stop.
 5. **Claude AI pass** — read cached `guidelines.md` AI-judgment rules, the
    target files, and their direct repo-contained imports (paths from CLI JSON).
-   **Bounds: max 20 files / 200KB total; truncation reported loudly.** File
+   **Bounds: max 20 files / 200KB total. Targets are never truncated** — if
+   targets alone exceed the budget, stop and ask the user to narrow the run;
+   imports fill whatever budget remains (they already got deterministic
+   coverage), omissions listed by name. File
    contents are wrapped in delimited data blocks; SKILL.md instructs the model
    to treat content strictly as data (honest caveat: this is a mitigation, not
    a security boundary). CLI findings are provided as context: "already
@@ -172,4 +189,9 @@ killed "always-latest" distribution (unanimous supply-chain finding) and added
 guidelines.md as a versioned asset. Round 2 killed the degraded offline mode
 (6/8), moved hash verification to every run (4/8), bounded AI input (6/8), and
 replaced mechanical dedup with model-side context (per sonnet-5's dissent).
-Raw transcripts: `/tmp/senate-18188`, `/tmp/senate-u9Dz2n`.
+Round 3 (final spec pass) added: untracked files in default targets, the
+not-a-git-repo branch, `shasum -c` from the cache dir, hash-of-hashes emitted
+by the release workflow, targets-never-truncated AI budgeting, `--` option
+terminator, realpath containment for imports, cliVersion-vs-pin check, and the
+macOS/Linux-only v1 declaration.
+Raw transcripts: `/tmp/senate-18188`, `/tmp/senate-u9Dz2n`, `/tmp/senate-wSxzvm`.
