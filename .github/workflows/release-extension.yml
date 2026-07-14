@@ -62,8 +62,39 @@ jobs:
         # unit gate.
         run: npm run test:vsix
 
+      - name: Build linter CLI
+        run: npm run compile:cli
+
+      - name: CLI smoke test (gate before upload)
+        run: |
+          set -uo pipefail
+          out="$(node dist/linter-cli.js --json --root test-fixtures/cli/fixtures -- dirty.spec.ts)"; status=$?
+          if [ "$status" -ne 1 ]; then echo "expected exit 1 (findings), got $status"; exit 1; fi
+          echo "$out" | python3 -c "
+          import json, sys
+          d = json.load(sys.stdin)
+          assert d['schemaVersion'] == 1, 'schemaVersion'
+          assert d['findings'], 'no findings on dirty fixture'
+          assert 'helper.ts' in d['imports'], 'helper import missing'
+          "
+
+      - name: Checksum CLI assets
+        run: |
+          set -euo pipefail
+          cp guidelines.md dist/guidelines.md
+          (cd dist && shasum -a 256 linter-cli.js guidelines.md > SHA256SUMS)
+          echo '### linter-cli release assets' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat dist/SHA256SUMS >> "$GITHUB_STEP_SUMMARY"
+          echo "SHA256SUMS_SHA256=$(shasum -a 256 dist/SHA256SUMS | cut -d' ' -f1)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: '*.vsix'
+          files: |
+            *.vsix
+            dist/linter-cli.js
+            dist/guidelines.md
+            dist/SHA256SUMS
           generate_release_notes: true
