@@ -68,7 +68,10 @@ jobs:
       - name: CLI smoke test (gate before upload)
         run: |
           set -uo pipefail
-          out="$(node dist/linter-cli.js --json --root test-fixtures/cli/fixtures -- dirty.spec.ts)"; status=$?
+          # Actions' default step shell is `bash -e {0}`; `set -uo pipefail`
+          # does not clear that -e, so the CLI's expected exit 1 (findings)
+          # must be absorbed inline or it kills the step.
+          out="$(node dist/linter-cli.js --json --root test-fixtures/cli/fixtures -- dirty.spec.ts)" && status=0 || status=$?
           if [ "$status" -ne 1 ]; then echo "expected exit 1 (findings), got $status"; exit 1; fi
           echo "$out" | python3 -c "
           import json, sys
