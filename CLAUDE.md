@@ -31,6 +31,8 @@ npm run lint          # ESLint on src/
 npm test              # Hermetic suite (type-check + lint + static checks + fixtures)
 npm run test:model-guard  # Live model guard (probes Anthropic API per-id)
 npm run test:e2e      # Offline VS Code E2E (no API key needed)
+npm run compile:cli   # Build standalone dist/linter-cli.js (vscode/cspell/jiti stubbed)
+npm run test:cli      # CLI fixture suite (builds + exercises the artifact)
 ```
 
 To test the extension in VS Code: build with `npm run package`, then install the `.vsix` via VS Code.
@@ -176,7 +178,7 @@ clean checkout it would self-build via an unpinned network `npx @vscode/vsce`.
 
 1. **Hermetic suite — `npm test`.** Type-check + ESLint + static model check
    (default ∈ enum + id shape) + every fixture suite under `test-fixtures/`
-   (detector, diagnostics, regression, smoke, ai-failure, spellcheck,
+   (cli, detector, diagnostics, regression, smoke, ai-failure, spellcheck,
    git-safety). No network, no API key — runs identically offline and on
    fork PRs. This is the hard CI gate.
 2. **Live model guard — `npm run test:model-guard`.** Probes
