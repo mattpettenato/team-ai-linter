@@ -1,7 +1,6 @@
 /**
  * CLI fixture suite. Run via: npm run test:cli
- * Builds dist/linter-cli.js then exercises it end-to-end (later tasks).
- * This file starts with stub-behavior cases and grows in Tasks 2-3.
+ * Builds dist/linter-cli.js then exercises the artifact end-to-end.
  */
 import { execFileSync, spawnSync } from 'node:child_process'
 import * as fs from 'node:fs'
@@ -91,12 +90,23 @@ check('target outside --root is rejected', () => {
 })
 
 check('clean file: exit 0, valid JSON envelope', () => {
-  const r = runCli(['--json', '--root', fixturesDir, '--', 'clean.spec.ts'])
+  // Hermetic git repo: with the monorepo walk-up, fixturesDir inherits the
+  // MAIN repo's git context, where @checksum-ai/runtime is legitimately
+  // undeclared → a true-positive git finding. Isolate instead.
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tal-cli-clean-'))
+  execFileSync('git', ['init', '-q'], { cwd: tmp })
+  fs.writeFileSync(path.join(tmp, 'package.json'),
+    JSON.stringify({ name: 'fixture', dependencies: { '@checksum-ai/runtime': '*' } }))
+  fs.copyFileSync(path.join(fixturesDir, 'clean.spec.ts'), path.join(tmp, 'clean.spec.ts'))
+  const r = runCli(['--json', '--root', tmp, '--', 'clean.spec.ts'])
   if (r.status !== 0) throw new Error(`status ${r.status} stderr: ${r.stderr}`)
   const doc = JSON.parse(r.stdout)
   if (doc.schemaVersion !== 1) throw new Error('schemaVersion')
   if (typeof doc.cliVersion !== 'string' || !doc.cliVersion) throw new Error('cliVersion')
   if (!Array.isArray(doc.findings) || !Array.isArray(doc.imports)) throw new Error('arrays missing')
+  if (!Array.isArray(doc.disabledLayers) || !doc.disabledLayers.includes('spellcheck')) {
+    throw new Error(`disabledLayers missing spellcheck: ${JSON.stringify(doc.disabledLayers)}`)
+  }
 })
 
 check('dirty file: exit 1, findings on target AND imported helper', () => {
@@ -163,6 +173,59 @@ check('directory target: finds issues in test file via directory expansion', () 
   if (!files.has('dirty.spec.ts')) throw new Error(`no findings on dirty.spec.ts: ${[...files]}`)
   // Should also include the imported helper
   if (!files.has('helper.ts')) throw new Error(`no findings on imported helper: ${[...files]}`)
+})
+
+check('shell metacharacters in imported filename do not execute (RCE regression)', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tal-cli-rce-'))
+  execFileSync('git', ['init', '-q'], { cwd: tmp })
+  const evilName = 'dep`touch INJECTED`$(touch INJECTED2)'
+  fs.writeFileSync(path.join(tmp, `${evilName}.ts`), 'export const h = 1\n')
+  fs.writeFileSync(path.join(tmp, 'victim.spec.ts'),
+    `import { h } from './${evilName}'\nimport { test } from '@playwright/test'\ntest('t', async () => { console.log(h) })\n`)
+  const r = runCli(['--json', '--root', tmp, '--', 'victim.spec.ts'])
+  if (fs.existsSync(path.join(tmp, 'INJECTED')) || fs.existsSync(path.join(tmp, 'INJECTED2'))) {
+    throw new Error('shell injection executed — marker file created')
+  }
+  if (r.status === 2) throw new Error(`run failed: ${r.stderr}`)
+  JSON.parse(r.stdout)
+})
+
+check('monorepo subdir --root: git layer stays enabled (walks up for .git)', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tal-cli-mono-'))
+  execFileSync('git', ['init', '-q'], { cwd: tmp })
+  const pkg = path.join(tmp, 'packages', 'web')
+  fs.mkdirSync(pkg, { recursive: true })
+  fs.copyFileSync(path.join(fixturesDir, 'clean.spec.ts'), path.join(pkg, 'clean.spec.ts'))
+  const r = runCli(['--json', '--root', pkg, '--', 'clean.spec.ts'])
+  if (/git safety skipped:/.test(r.stderr)) throw new Error(`git layer disabled in subdir: ${r.stderr}`)
+  JSON.parse(r.stdout)
+})
+
+check('glob target skips node_modules', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tal-cli-glob-'))
+  fs.mkdirSync(path.join(tmp, 'node_modules', 'dep'), { recursive: true })
+  fs.writeFileSync(path.join(tmp, 'node_modules', 'dep', 'vendored.spec.ts'),
+    `import { test } from '@playwright/test'\ntest('v', async ({ page }) => { await page.waitForTimeout(1) })\n`)
+  fs.copyFileSync(path.join(fixturesDir, 'dirty.spec.ts'), path.join(tmp, 'real.spec.ts'))
+  fs.copyFileSync(path.join(fixturesDir, 'helper.ts'), path.join(tmp, 'helper.ts'))
+  const r = runCli(['--json', '--root', tmp, '--', '**/*.spec.ts'])
+  if (r.status !== 1) throw new Error(`status ${r.status} stderr: ${r.stderr}`)
+  const doc = JSON.parse(r.stdout)
+  const files = new Set(doc.findings.map((f: { file: string }) => f.file))
+  if ([...files].some(f => (f as string).includes('node_modules'))) {
+    throw new Error(`glob linted into node_modules: ${[...files]}`)
+  }
+  if (!files.has('real.spec.ts')) throw new Error(`real spec not linted: ${[...files]}`)
+})
+
+check('broken symlink discovered in directory walk is skipped, not fatal', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tal-cli-symlink-'))
+  fs.copyFileSync(path.join(fixturesDir, 'clean.spec.ts'), path.join(tmp, 'clean.spec.ts'))
+  fs.symlinkSync(path.join(tmp, 'gone.ts'), path.join(tmp, 'broken.spec.ts'))
+  const r = runCli(['--json', '--root', tmp, '--', '.'])
+  if (r.status === 2) throw new Error(`broken symlink aborted the run: ${r.stderr}`)
+  if (!/skipped/.test(r.stderr)) throw new Error(`no skip warning: ${r.stderr}`)
+  JSON.parse(r.stdout)
 })
 
 process.exit(failures === 0 ? 0 : 1)

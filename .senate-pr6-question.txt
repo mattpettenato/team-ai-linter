@@ -1,9 +1,0 @@
-https://github.com/checksum-ai/checksum-claude-plugins/pull/6  /ponytail:ponytail review /thermo-nuclear-code-quality-review /review
-
-do a general roast of this PR, check if not overengineered, find bugs and missing parts
-
-leave ur review as a comment on the PR
-
-make sure to review all comments and feedback on the pr as well
-
-/senate

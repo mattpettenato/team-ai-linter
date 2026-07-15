@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Microsoft Corporation.
+ * Copyright (c) Checksum.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,8 +38,9 @@ const TEST_FILE_RE = /\.(test|spec)\.(ts|js|tsx|jsx)$/
 const USAGE = 'usage: linter-cli --json [--root <dir>] -- <files|dirs|globs...>'
 
 // Detectors narrate progress via console.log; stdout must stay JSON-only.
-// Redirect before module bodies execute at require time; detectors that log
-// will call the redirected console.log at runtime, not module-load time.
+// Load-time logs from bundled deps are caught by the esbuild banner
+// (console.log=console.error runs before any module body); this rebind is
+// the typed, source-visible statement of the same contract.
 console.log = (...args: Parameters<typeof console.error>) => console.error(...args)
 
 interface CliArgs {
@@ -88,6 +89,27 @@ function contain(p: string, realRoot: string, label: string): string {
   return real
 }
 
+/**
+ * Like contain(), but returns null (with a stderr warning) instead of exiting.
+ * For files DISCOVERED by walking a directory or expanding a glob — one broken
+ * or escaping symlink must not abort the whole run. Explicitly named targets
+ * still go through contain() and fail hard.
+ */
+function tryContain(p: string, realRoot: string, label: string): string | null {
+  let real: string
+  try {
+    real = fs.realpathSync(p)
+  } catch {
+    console.error(`${label} not found: ${p} — skipped`)
+    return null
+  }
+  if (real !== realRoot && !real.startsWith(realRoot + path.sep)) {
+    console.error(`${label} resolves outside --root: ${p} — skipped`)
+    return null
+  }
+  return real
+}
+
 function walkForTestFiles(dir: string, out: string[]): void {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue
@@ -108,7 +130,10 @@ function expandTargets(rawTargets: string[], root: string, realRoot: string): st
     } else if (stat?.isDirectory()) {
       const found: string[] = []
       walkForTestFiles(contain(abs, realRoot, 'target'), found)
-      found.forEach(f => files.add(contain(f, realRoot, 'target')))
+      found.forEach(f => {
+        const real = tryContain(f, realRoot, 'discovered file')
+        if (real !== null) files.add(real)
+      })
     } else if (/[*?[\]{}]/.test(raw)) {
       // fs.globSync: Node >= 22. CLI is built for CI (Node 22) and the skill
       // preflights node; on older Node fall through to "not found".
@@ -117,10 +142,15 @@ function expandTargets(rawTargets: string[], root: string, realRoot: string): st
       const matches = globSync(raw, { cwd: root })
       if (matches.length === 0) fail(`glob matched nothing: ${raw}`)
       matches.forEach((m: string) => {
+        // match the directory walker's exclusions: never lint into
+        // node_modules or dot-directories a glob happens to reach
+        const segs = m.split(/[\\/]/)
+        if (segs.some(s => s === 'node_modules' || (s.startsWith('.') && s !== '.' && s !== '..'))) return
         const abs = path.resolve(root, m)
         try {
           if (fs.statSync(abs).isFile()) {
-            files.add(contain(abs, realRoot, 'target'))
+            const real = tryContain(abs, realRoot, 'glob match')
+            if (real !== null) files.add(real)
           }
         } catch {
           // skip stat failures (broken symlinks, permission denied, etc.)
@@ -140,13 +170,15 @@ async function main(): Promise<void> {
   })()
   const files = expandTargets(targets, realRoot, realRoot)
 
-  // Findings + imports are produced in lintTargets (Task 3).
   const { findings, imports } = await lintTargets(files, realRoot)
 
   const payload = JSON.stringify({
     schemaVersion: SCHEMA_VERSION,
     cliVersion: __CLI_VERSION__,
     root: realRoot,
+    // Layers the extension runs that this CLI build does not — lets JSON
+    // consumers detect that "clean here" ≠ "clean in VS Code".
+    disabledLayers: ['spellcheck'],
     findings,
     imports,
   }, null, 2) + '\n'
@@ -195,8 +227,16 @@ function gitFinding(realRoot: string, file: string, issue: GitIssue): CliFinding
 }
 
 function isGitRepo(realRoot: string): boolean {
-  // .git is a dir in a normal checkout and a FILE in a worktree — existsSync covers both
-  return fs.existsSync(path.join(realRoot, '.git'))
+  // Walk up: --root often points at a monorepo package dir whose repo lives
+  // above it. .git is a dir in a normal checkout and a FILE in a worktree —
+  // existsSync covers both. (GitService does the same walk internally.)
+  let dir = realRoot
+  while (true) {
+    if (fs.existsSync(path.join(dir, '.git'))) return true
+    const parent = path.dirname(dir)
+    if (parent === dir) return false
+    dir = parent
+  }
 }
 
 async function lintTargets(files: string[], realRoot: string):
@@ -244,6 +284,9 @@ async function lintTargets(files: string[], realRoot: string):
     }
   }
 
+  // Helper contract (deliberate, documented in the spec's parity notes):
+  // one hop only — imports of TARGETS are linted, helpers' own imports are
+  // not followed — and helpers get the static layer only, no git safety.
   for (const helper of [...helperSet].sort()) {
     const content = fs.readFileSync(helper, 'utf8')
     const issues = await detectDeterministicPatterns(content, helper)

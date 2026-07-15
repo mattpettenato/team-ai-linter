@@ -65,6 +65,10 @@ async function main() {
         jiti: './src/cli/stubs/jiti-stub.cjs',
       },
       define: { __CLI_VERSION__: JSON.stringify(pkgVersion) },
+      // stdout must stay JSON-only. Bundled dep initializers run BEFORE the
+      // entry body in esbuild's CJS output, so the entry's own console.log
+      // rebind is too late for load-time logs — the banner runs first.
+      banner: { js: 'console.log = console.error;' },
       logLevel: 'info',
     })
     return

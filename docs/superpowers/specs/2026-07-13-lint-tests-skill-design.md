@@ -66,6 +66,7 @@ node linter-cli.js --json --root <repo-root> -- <files-or-globs...>
   "schemaVersion": 1,
   "cliVersion": "0.5.0",
   "root": "/abs/path/to/repo",
+  "disabledLayers": ["spellcheck"],
   "findings": [
     { "file": "...", "line": 1, "endLine": 1, "rule": "...",
       "severity": "warning", "message": "...", "layer": "static|git" }
@@ -74,8 +75,23 @@ node linter-cli.js --json --root <repo-root> -- <files-or-globs...>
 }
 ```
 
+- `disabledLayers` names extension layers this CLI build omits, so JSON
+  consumers can tell "clean here" from "clean in VS Code"
 - stdout = JSON only; diagnostics → stderr
 - Exit codes: `0` clean, `1` findings (a *successful* lint), `2` execution error
+- Containment: explicitly named targets that are missing or escape `--root`
+  fail hard (exit 2); files *discovered* by a directory walk or glob that do
+  so are skipped with a stderr warning (one broken symlink must not abort a
+  run). Globs skip `node_modules` and dot-directories, matching the walker.
+- Git layer root: walk up from `--root` for `.git` (monorepo package dirs are
+  the normal case); all git subprocess calls use argv-form `execFile` — file
+  paths from untrusted repos must never pass through a shell
+- Helper contract (deliberate): one hop only — imports of targets are linted,
+  helpers' own imports are not followed — and helpers get the static layer
+  only, no git safety
+- `checksum.config.ts` discovery is disabled in the CLI (no workspace root to
+  bound the parent-dir walk; an unbounded walk would read config outside
+  `--root` and misattribute its findings)
 
 ## Part 2: Release wiring
 
