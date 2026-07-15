@@ -31,6 +31,8 @@ npm run lint          # ESLint on src/
 npm test              # Hermetic suite (type-check + lint + static checks + fixtures)
 npm run test:model-guard  # Live model guard (probes Anthropic API per-id)
 npm run test:e2e      # Offline VS Code E2E (no API key needed)
+npm run compile:cli   # Build standalone dist/linter-cli.js (vscode/cspell/jiti stubbed)
+npm run test:cli      # CLI fixture suite (builds + exercises the artifact)
 ```
 
 To test the extension in VS Code: build with `npm run package`, then install the `.vsix` via VS Code.
@@ -48,6 +50,14 @@ git tag v0.4.0 && git push origin v0.4.0
 ```
 
 The auto-updater in the extension checks GitHub Releases and prompts users to install new versions.
+
+**Downstream consumer — the `/lint-tests` marketplace skill.** The `lint-tests` plugin in
+[checksum-ai/checksum-claude-plugins](https://github.com/checksum-ai/checksum-claude-plugins)
+pins a specific release tag and its `SHA256SUMS_SHA256` hash (printed in the release
+workflow's step summary). It does NOT auto-update: after cutting a release that changes
+CLI behavior or the JSON contract, update the two pins in the skill's `SKILL.md`
+(every `v<version>` occurrence + the hash) and push to the marketplace repo, or teammates
+keep running the old CLI. Extension-only releases don't require a skill bump.
 
 ## Project Structure
 
@@ -176,7 +186,7 @@ clean checkout it would self-build via an unpinned network `npx @vscode/vsce`.
 
 1. **Hermetic suite — `npm test`.** Type-check + ESLint + static model check
    (default ∈ enum + id shape) + every fixture suite under `test-fixtures/`
-   (detector, diagnostics, regression, smoke, ai-failure, spellcheck,
+   (cli, detector, diagnostics, regression, smoke, ai-failure, spellcheck,
    git-safety). No network, no API key — runs identically offline and on
    fork PRs. This is the hard CI gate.
 2. **Live model guard — `npm run test:model-guard`.** Probes

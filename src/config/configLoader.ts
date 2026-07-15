@@ -171,12 +171,16 @@ export function isEslintTypeAwareEnabled(): boolean {
  * Find checksum.config.ts by walking up from the given file path
  */
 export function findChecksumConfigPath(fromFilePath: string): string | undefined {
-  let dir = path.dirname(fromFilePath);
   const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  // No workspace root (CLI build, or no folder open): don't walk at all — an
+  // unbounded walk would read a checksum.config.ts OUTSIDE the lint root and
+  // attribute its findings to the file being linted.
+  if (!root) return undefined;
+  let dir = path.dirname(fromFilePath);
   while (dir && dir !== path.dirname(dir)) {
     const candidate = path.join(dir, 'checksum.config.ts');
     if (fs.existsSync(candidate)) return candidate;
-    if (root && dir === root) break;
+    if (dir === root) break;
     dir = path.dirname(dir);
   }
   return undefined;

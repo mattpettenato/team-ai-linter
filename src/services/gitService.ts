@@ -13,12 +13,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
 
 const execAsync = promisify(exec);
+// argv form — file paths must never pass through a shell (they can contain
+// `$(…)`/backticks and come from untrusted repos when run via the CLI)
+const execFileAsync = promisify(execFile);
 
 export interface GitFileStatus {
   /** File path */
@@ -107,7 +110,7 @@ export class GitService {
    */
   private async isFileTracked(filePath: string): Promise<boolean> {
     try {
-      await execAsync(`git ls-files --error-unmatch "${filePath}"`, {
+      await execFileAsync('git', ['ls-files', '--error-unmatch', '--', filePath], {
         cwd: path.dirname(filePath),
       })
       return true
@@ -121,7 +124,7 @@ export class GitService {
    */
   private async getGitStatusOutput(filePath: string): Promise<string> {
     try {
-      const { stdout } = await execAsync(`git status --porcelain "${filePath}"`, {
+      const { stdout } = await execFileAsync('git', ['status', '--porcelain', '--', filePath], {
         cwd: path.dirname(filePath),
       })
       // Only trim trailing whitespace — the leading characters are status codes
@@ -139,7 +142,7 @@ export class GitService {
   async isOnlyLintTimestampDiff(filePath: string): Promise<boolean> {
     try {
       const cwd = path.dirname(filePath)
-      const { stdout } = await execAsync(`git diff -- "${filePath}"`, { cwd })
+      const { stdout } = await execFileAsync('git', ['diff', '--', filePath], { cwd })
       if (!stdout.trim()) return false
 
       // Extract only added/removed content lines (not diff headers)
