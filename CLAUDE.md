@@ -202,7 +202,7 @@ clean checkout it would self-build via an unpinned network `npx @vscode/vsce`.
    in the fixture `.env`, `ANTHROPIC_BASE_URL` pointed at a refused port — the
    AI layer always fails, which doubles as the standing regression test that
    deterministic checks survive AI failure. Requires no key. In CI it is a
-   soft gate (`continue-on-error`) until flipped per the PE-271 sub-task.
+   hard gate (blocking) since PE-542.
 
 **Adding a fixture suite:** create `test-fixtures/<name>/test-<name>.mts`, run
 it via `tsx --import ./test-fixtures/regression/register-loader.mjs` (stubs

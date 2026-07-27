@@ -78,14 +78,12 @@ jobs:
             }
 
   e2e:
-    # Soft gate during rollout: flip continue-on-error to false per the dated
-    # Linear sub-task of PE-271 (see spec §4). Do NOT "fix" a red e2e not
-    # blocking a tag — that is the intended rollout behavior.
+    # Hard gate since PE-542: red E2E blocks merges and releases (burn-in
+    # soft-gate period per PE-271 spec §4 completed 2026-07-27).
     if: github.event_name != 'schedule'
     needs: unit
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
         with:
