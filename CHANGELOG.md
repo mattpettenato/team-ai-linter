@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Unreleased]
+
+### Fixed
+- Nightly model guard alerts distinguish bad or expired API keys from stale models and unclassified failures, updating existing issue titles when the cause changes.
+
 ## [2026-04-09] — v0.5.3
 
 ### Fixed
